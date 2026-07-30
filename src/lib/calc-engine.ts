@@ -2,14 +2,28 @@ import type {
   BidItem,
   BidItemMaterial,
   BidItemRecipe,
+  CompanyDefaults,
   CrewRate,
   EquipmentRate,
   Material,
-  Project,
   ProjectLineItem,
 } from "@/types/domain";
 
 export type MaterialOverrideInput = { override_rate?: number | null; override_qty?: number | null };
+export type LaborOverrideInput = { override_hours?: number | null; override_headcount?: number | null };
+export type EquipmentOverrideInput = { override_hours?: number | null };
+
+export interface LineOverrides {
+  materials?: Map<string, MaterialOverrideInput>;
+  labor?: Map<string, LaborOverrideInput>;
+  equipment?: Map<string, EquipmentOverrideInput>;
+}
+
+export interface SelectedVendorQuote {
+  id: string;
+  vendor_name: string;
+  quote_amount: number;
+}
 
 // ============================================================
 // Rate resolution
@@ -174,6 +188,11 @@ export function computeMaterialLineCost(
 // ============================================================
 // Line item base cost (labor + equipment + material)
 // ============================================================
+//
+// Labor/equipment overrides (round 2) mirror the material override pattern:
+// a project-only tweak to hours_per_unit/headcount that shadows the bid
+// item's master recipe for this project without altering it. Missing
+// override -> fall back to the recipe's value.
 
 export interface LaborLineCost {
   crew_role_id: string;
@@ -181,6 +200,7 @@ export interface LaborLineCost {
   hours: number;
   rate: number;
   cost: number;
+  overridden: boolean;
 }
 
 export interface EquipmentLineCost {
@@ -189,6 +209,7 @@ export interface EquipmentLineCost {
   hours: number;
   rate: number;
   cost: number;
+  overridden: boolean;
 }
 
 export interface LineItemBaseCost {
@@ -205,24 +226,41 @@ export function computeLineItemBaseCost(
   recipe: BidItemRecipe,
   quantity: number,
   rates: RateContext,
-  materialOverrides: Map<string, MaterialOverrideInput> = new Map()
+  overrides: LineOverrides = {}
 ): LineItemBaseCost {
+  const materialOverrides = overrides.materials ?? new Map();
+  const laborOverrides = overrides.labor ?? new Map();
+  const equipmentOverrides = overrides.equipment ?? new Map();
+
   const labor: LaborLineCost[] = recipe.labor.map((l) => {
     const resolved = rates.resolveCrewRate(l.crew_role_id);
-    const hours = quantity * l.hours_per_unit * l.headcount;
+    const override = laborOverrides.get(l.crew_role_id);
+    const hoursPerUnit = override?.override_hours ?? l.hours_per_unit;
+    const headcount = override?.override_headcount ?? l.headcount;
+    const hours = quantity * hoursPerUnit * headcount;
     const rate = resolved.hourly_rate + (resolved.fringe ?? 0);
-    return { crew_role_id: l.crew_role_id, name: resolved.name, hours, rate, cost: hours * rate };
+    return {
+      crew_role_id: l.crew_role_id,
+      name: resolved.name,
+      hours,
+      rate,
+      cost: hours * rate,
+      overridden: Boolean(override && (override.override_hours != null || override.override_headcount != null)),
+    };
   });
 
   const equipment: EquipmentLineCost[] = recipe.equipment.map((e) => {
     const resolved = rates.resolveEquipmentRate(e.equipment_id);
-    const hours = quantity * e.hours_per_unit;
+    const override = equipmentOverrides.get(e.equipment_id);
+    const hoursPerUnit = override?.override_hours ?? e.hours_per_unit;
+    const hours = quantity * hoursPerUnit;
     return {
       equipment_id: e.equipment_id,
       name: resolved.name,
       hours,
       rate: resolved.hourly_rate,
       cost: hours * resolved.hourly_rate,
+      overridden: Boolean(override && override.override_hours != null),
     };
   });
 
@@ -249,29 +287,24 @@ export function computeLineItemBaseCost(
 // Markup / override hierarchy
 // ============================================================
 //
-// Overhead/profit/contingency resolve line override -> bid item default ->
-// project default. Each is calculated independently off base cost and
-// summed (not compounded): total = base * (1 + overhead% + profit% + contingency%).
-//
-// Note on "project-level by default": since the project default % is the
-// same for every non-overridden line, summing each line's
-// base*(1+sum of pcts) is arithmetically identical to summing all bases
-// and marking the pool up once -- there's no separate "pooling" step to
-// implement, the per-line formula already collapses to that when nothing
-// is overridden.
+// Overhead and contingency now come from the company-wide CompanyDefaults
+// (fluid history, like crew/equipment/material rates) instead of a
+// per-project field. Profit is entered live on the Review screen rather
+// than stored as an auto-applied project setting -- resolveProfitPct takes
+// whatever the Review screen's current input value is as its bottom
+// fallback tier. Each is calculated independently off base cost and summed
+// (not compounded): total = base * (1 + overhead% + profit% + contingency%).
 
-export function resolveOverheadPct(line: ProjectLineItem, item: BidItem, project: Project): number {
-  return line.override_overhead_pct ?? item.default_overhead_pct ?? project.default_overhead_pct;
+export function resolveOverheadPct(line: ProjectLineItem, item: BidItem, company: CompanyDefaults): number {
+  return line.override_overhead_pct ?? item.default_overhead_pct ?? company.overhead_pct;
 }
 
-export function resolveProfitPct(line: ProjectLineItem, item: BidItem, project: Project): number {
-  return line.override_profit_pct ?? item.default_profit_pct ?? project.default_profit_pct;
+export function resolveContingencyPct(line: ProjectLineItem, item: BidItem, company: CompanyDefaults): number {
+  return line.override_contingency_pct ?? item.default_contingency_pct ?? company.contingency_pct;
 }
 
-export function resolveContingencyPct(line: ProjectLineItem, item: BidItem, project: Project): number {
-  return (
-    line.override_contingency_pct ?? item.default_contingency_pct ?? project.default_contingency_pct
-  );
+export function resolveProfitPct(line: ProjectLineItem, item: BidItem, liveProfitPct: number): number {
+  return line.override_profit_pct ?? item.default_profit_pct ?? liveProfitPct;
 }
 
 export interface MarkupBreakdown {
@@ -302,36 +335,45 @@ export function computeMarkup(baseCost: number, overheadPct: number, profitPct: 
 // ============================================================
 // Full line item calculation
 // ============================================================
+//
+// Two totals are tracked per self-performed line: preProfitTotal (base +
+// company overhead + contingency -- what the Estimate Builder's live total
+// bar shows, since profit isn't decided yet) and the full total including
+// profit (what the Review screen shows). Subcontracted lines skip company
+// overhead/contingency/profit entirely: their cost is the selected vendor
+// quote marked up by the line's own sub_markup_pct, and that's already
+// "final" at both stages (round 2 #8).
 
 export interface LineItemEstimate {
   lineItemId: string;
   bidItemId: string;
   quantity: number;
-  isSubQuote: boolean;
-  base: LineItemBaseCost | null; // null for sub_quote lines
+  isSubcontracted: boolean;
+  base: LineItemBaseCost | null; // null for subcontracted lines
   markup: MarkupBreakdown;
+  preProfitTotal: number;
+  preProfitUnitPrice: number;
   rawTotal: number;
   rawUnitPrice: number;
   roundedRate: number | null;
   finalTotal: number;
+  selectedVendorQuote: SelectedVendorQuote | null;
 }
 
 export function computeLineItemEstimate(
-  project: Project,
   line: ProjectLineItem,
   recipe: BidItemRecipe,
+  company: CompanyDefaults,
+  liveProfitPct: number,
   rates: RateContext,
-  materialOverrides: Map<string, MaterialOverrideInput> = new Map()
+  overrides: LineOverrides = {},
+  selectedVendorQuote: SelectedVendorQuote | null = null
 ): LineItemEstimate {
   const item = recipe.item;
-  const hasExplicitOverride =
-    line.override_overhead_pct != null ||
-    line.override_profit_pct != null ||
-    line.override_contingency_pct != null;
 
-  if (item.item_type === "sub_quote" && !hasExplicitOverride) {
-    const vendorAmount = line.vendor_quote_amount ?? 0;
-    const markupPct = line.markup_pct ?? 0;
+  if (line.is_subcontracted) {
+    const vendorAmount = selectedVendorQuote?.quote_amount ?? 0;
+    const markupPct = line.sub_markup_pct ?? 0;
     const total = vendorAmount * (1 + markupPct);
     const markup: MarkupBreakdown = {
       overheadPct: 0,
@@ -347,72 +389,106 @@ export function computeLineItemEstimate(
       lineItemId: line.id,
       bidItemId: item.id,
       quantity: line.quantity,
-      isSubQuote: true,
+      isSubcontracted: true,
       base: null,
       markup,
+      preProfitTotal: total,
+      preProfitUnitPrice: rawUnitPrice,
       rawTotal: total,
       rawUnitPrice,
       roundedRate: line.manual_rounded_rate,
       finalTotal: line.manual_rounded_rate != null ? line.manual_rounded_rate * line.quantity : total,
+      selectedVendorQuote,
     };
   }
 
-  const base = computeLineItemBaseCost(recipe, line.quantity, rates, materialOverrides);
-  const overheadPct = resolveOverheadPct(line, item, project);
-  const profitPct = resolveProfitPct(line, item, project);
-  const contingencyPct = resolveContingencyPct(line, item, project);
+  const base = computeLineItemBaseCost(recipe, line.quantity, rates, overrides);
+  const overheadPct = resolveOverheadPct(line, item, company);
+  const contingencyPct = resolveContingencyPct(line, item, company);
+  const profitPct = resolveProfitPct(line, item, liveProfitPct);
   const markup = computeMarkup(base.baseCost, overheadPct, profitPct, contingencyPct);
+  const preProfitTotal = base.baseCost + markup.overhead + markup.contingency;
   const rawUnitPrice = line.quantity > 0 ? markup.total / line.quantity : 0;
+  const preProfitUnitPrice = line.quantity > 0 ? preProfitTotal / line.quantity : 0;
 
   return {
     lineItemId: line.id,
     bidItemId: item.id,
     quantity: line.quantity,
-    isSubQuote: false,
+    isSubcontracted: false,
     base,
     markup,
+    preProfitTotal,
+    preProfitUnitPrice,
     rawTotal: markup.total,
     rawUnitPrice,
     roundedRate: line.manual_rounded_rate,
     finalTotal: line.manual_rounded_rate != null ? line.manual_rounded_rate * line.quantity : markup.total,
+    selectedVendorQuote: null,
   };
 }
 
 export interface ProjectEstimate {
   lines: LineItemEstimate[];
-  totalBaseCost: number;
-  totalOverhead: number;
-  totalProfit: number;
-  totalContingency: number;
+  selfPerformed: {
+    totalBaseCost: number;
+    totalOverhead: number;
+    totalContingency: number;
+    totalProfit: number;
+    preProfitTotal: number;
+    total: number;
+  };
+  subcontracted: {
+    total: number;
+  };
+  grandTotalPreProfit: number;
   grandTotal: number;
 }
 
 export function computeProjectEstimate(
-  project: Project,
   lines: ProjectLineItem[],
   recipesByBidItemId: Map<string, BidItemRecipe>,
+  company: CompanyDefaults,
+  liveProfitPct: number,
   rates: RateContext,
-  materialOverridesByLineId: Map<string, Map<string, MaterialOverrideInput>> = new Map()
+  overridesByLineId: Map<string, LineOverrides> = new Map(),
+  selectedVendorQuoteByLineId: Map<string, SelectedVendorQuote> = new Map()
 ): ProjectEstimate {
   const estimates = lines.map((line) => {
     const recipe = recipesByBidItemId.get(line.bid_item_id);
     if (!recipe) throw new Error(`bid item recipe not found: ${line.bid_item_id}`);
     return computeLineItemEstimate(
-      project,
       line,
       recipe,
+      company,
+      liveProfitPct,
       rates,
-      materialOverridesByLineId.get(line.id) ?? new Map()
+      overridesByLineId.get(line.id) ?? {},
+      selectedVendorQuoteByLineId.get(line.id) ?? null
     );
   });
 
+  const selfPerformedLines = estimates.filter((e) => !e.isSubcontracted);
+  const subcontractedLines = estimates.filter((e) => e.isSubcontracted);
+
+  const selfPerformed = {
+    totalBaseCost: sum(selfPerformedLines.map((e) => e.base?.baseCost ?? 0)),
+    totalOverhead: sum(selfPerformedLines.map((e) => e.markup.overhead)),
+    totalContingency: sum(selfPerformedLines.map((e) => e.markup.contingency)),
+    totalProfit: sum(selfPerformedLines.map((e) => e.markup.profit)),
+    preProfitTotal: sum(selfPerformedLines.map((e) => e.preProfitTotal)),
+    total: sum(selfPerformedLines.map((e) => e.finalTotal)),
+  };
+  const subcontracted = {
+    total: sum(subcontractedLines.map((e) => e.finalTotal)),
+  };
+
   return {
     lines: estimates,
-    totalBaseCost: sum(estimates.map((e) => e.base?.baseCost ?? e.markup.total - e.markup.overhead - e.markup.profit - e.markup.contingency)),
-    totalOverhead: sum(estimates.map((e) => e.markup.overhead)),
-    totalProfit: sum(estimates.map((e) => e.markup.profit)),
-    totalContingency: sum(estimates.map((e) => e.markup.contingency)),
-    grandTotal: sum(estimates.map((e) => e.finalTotal)),
+    selfPerformed,
+    subcontracted,
+    grandTotalPreProfit: selfPerformed.preProfitTotal + subcontracted.total,
+    grandTotal: selfPerformed.total + subcontracted.total,
   };
 }
 

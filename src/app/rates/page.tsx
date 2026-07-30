@@ -3,11 +3,30 @@ import { RateLibrary } from "./rate-library";
 
 export default async function RatesPage() {
   const repository = getRepository();
-  const [crewRates, equipmentRates, materials] = await Promise.all([
+  const [
+    crewRates,
+    equipmentRates,
+    materials,
+    companyDefaults,
+    crewGroups,
+    equipmentGroups,
+  ] = await Promise.all([
     repository.listCrewRates(),
     repository.listEquipmentRates(),
     repository.listMaterials(),
+    repository.getCurrentCompanyDefaults(),
+    repository.listCrewGroups(),
+    repository.listEquipmentGroups(),
   ]);
+
+  const crewGroupMembersByGroup = Object.fromEntries(
+    await Promise.all(crewGroups.map(async (g) => [g.id, await repository.listCrewGroupMembers(g.id)] as const))
+  );
+  const equipmentGroupMembersByGroup = Object.fromEntries(
+    await Promise.all(
+      equipmentGroups.map(async (g) => [g.id, await repository.listEquipmentGroupMembers(g.id)] as const)
+    )
+  );
 
   return (
     <div>
@@ -21,6 +40,11 @@ export default async function RatesPage() {
         crewRates={crewRates}
         equipmentRates={equipmentRates}
         materials={materials}
+        companyDefaults={companyDefaults}
+        crewGroups={crewGroups}
+        crewGroupMembersByGroup={crewGroupMembersByGroup}
+        equipmentGroups={equipmentGroups}
+        equipmentGroupMembersByGroup={equipmentGroupMembersByGroup}
       />
     </div>
   );

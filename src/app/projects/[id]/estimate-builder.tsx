@@ -1,96 +1,162 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  RateContext,
-  computeProjectEstimate,
-  type LineItemEstimate,
-  type MaterialOverrideInput,
-} from "@/lib/calc-engine";
+import { useRouter } from "next/navigation";
+import { RateContext, computeProjectEstimate, type SelectedVendorQuote } from "@/lib/calc-engine";
 import type {
   BidItem,
   BidItemRecipe,
+  CompanyDefaults,
   CrewRate,
   EquipmentRate,
   Material,
   Project,
+  ProjectDocument,
   ProjectLineItem,
+  ProjectLineItemEquipmentOverride,
+  ProjectLineItemLaborOverride,
   ProjectLineItemMaterialOverride,
+  ProjectLineItemVendorQuote,
   ProjectStatus,
 } from "@/types/domain";
 import {
+  addCustomLineItemAction,
   addProjectLineItemAction,
+  clearEquipmentOverrideAction,
+  clearLaborOverrideAction,
   clearMaterialOverrideAction,
   removeProjectLineItemAction,
+  setEquipmentOverrideAction,
+  setLaborOverrideAction,
   setMaterialOverrideAction,
   updateProjectLineItemAction,
   updateProjectStatusAction,
 } from "../../actions";
-
-type OverrideMap = Map<string, MaterialOverrideInput>;
+import { LineItemRow } from "./line-item-row";
+import { DocumentsPanel } from "./documents-panel";
+import Link from "next/link";
 
 const STATUSES: ProjectStatus[] = ["estimating", "submitted", "won", "lost"];
+
+function formatCurrency(value: number) {
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
 
 export function EstimateBuilder({
   project,
   initialLineItems,
-  bidItems,
-  recipesByBidItemId,
+  catalogBidItems,
+  recipesByBidItemId: recipesByBidItemIdProp,
   crewRates,
   equipmentRates,
   materials,
+  companyDefaults,
   materialOverridesByLine,
+  laborOverridesByLine,
+  equipmentOverridesByLine,
+  vendorQuotesByLine,
+  initialDocuments,
 }: {
   project: Project;
   initialLineItems: ProjectLineItem[];
-  bidItems: BidItem[];
+  catalogBidItems: BidItem[];
   recipesByBidItemId: Record<string, BidItemRecipe>;
   crewRates: CrewRate[];
   equipmentRates: EquipmentRate[];
   materials: Material[];
+  companyDefaults: CompanyDefaults;
   materialOverridesByLine: Record<string, ProjectLineItemMaterialOverride[]>;
+  laborOverridesByLine: Record<string, ProjectLineItemLaborOverride[]>;
+  equipmentOverridesByLine: Record<string, ProjectLineItemEquipmentOverride[]>;
+  vendorQuotesByLine: Record<string, ProjectLineItemVendorQuote[]>;
+  initialDocuments: ProjectDocument[];
 }) {
+  const router = useRouter();
   const [status, setStatus] = useState(project.status);
   const [lineItems, setLineItems] = useState(initialLineItems);
-  const [overridesByLine, setOverridesByLine] = useState<Record<string, OverrideMap>>(() => {
-    const init: Record<string, OverrideMap> = {};
-    for (const [lineId, overrides] of Object.entries(materialOverridesByLine)) {
-      init[lineId] = new Map(overrides.map((o) => [o.material_id, o]));
-    }
-    return init;
-  });
+  const [recipesByBidItemId, setRecipesByBidItemId] = useState(recipesByBidItemIdProp);
   const [expandedLine, setExpandedLine] = useState<string | null>(null);
+
+  const [materialOverrides, setMaterialOverrides] = useState(() => toOverrideMaps(materialOverridesByLine, "material_id"));
+  const [laborOverrides, setLaborOverrides] = useState(() => toOverrideMaps(laborOverridesByLine, "crew_role_id"));
+  const [equipmentOverrides, setEquipmentOverrides] = useState(() => toOverrideMaps(equipmentOverridesByLine, "equipment_id"));
+  const vendorQuotes = vendorQuotesByLine;
+
   const [addBidItemId, setAddBidItemId] = useState("");
   const [addQuantity, setAddQuantity] = useState("");
   const [addPending, setAddPending] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customUnit, setCustomUnit] = useState<BidItem["unit"]>("LS");
+  const [customQuantity, setCustomQuantity] = useState("");
+  const [showCustomForm, setShowCustomForm] = useState(false);
+
+  // Recipe-row mutations (custom item buildup edits) happen via server
+  // actions that don't return the full updated recipe, so onRecipeChanged
+  // asks the server component to refetch; this resyncs local state from
+  // the freshly-fetched prop during render (React's documented escape
+  // hatch for this pattern), avoiding an extra effect-triggered render.
+  const [prevRecipesProp, setPrevRecipesProp] = useState(recipesByBidItemIdProp);
+  if (recipesByBidItemIdProp !== prevRecipesProp) {
+    setPrevRecipesProp(recipesByBidItemIdProp);
+    setRecipesByBidItemId(recipesByBidItemIdProp);
+  }
+
+  function refreshRecipes() {
+    router.refresh();
+  }
 
   const rateContext = useMemo(
     () => new RateContext(crewRates, equipmentRates, materials),
     [crewRates, equipmentRates, materials]
   );
-  const recipesMap = useMemo(
-    () => new Map(Object.entries(recipesByBidItemId)),
-    [recipesByBidItemId]
-  );
+  const recipesMap = useMemo(() => new Map(Object.entries(recipesByBidItemId)), [recipesByBidItemId]);
   const materialsById = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
+
+  const overridesByLineId = useMemo(() => {
+    const map = new Map<string, { materials?: Map<string, unknown>; labor?: Map<string, unknown>; equipment?: Map<string, unknown> }>();
+    const lineIds = new Set([
+      ...Object.keys(materialOverrides),
+      ...Object.keys(laborOverrides),
+      ...Object.keys(equipmentOverrides),
+    ]);
+    for (const id of lineIds) {
+      map.set(id, {
+        materials: materialOverrides[id],
+        labor: laborOverrides[id],
+        equipment: equipmentOverrides[id],
+      });
+    }
+    return map;
+  }, [materialOverrides, laborOverrides, equipmentOverrides]);
+
+  const selectedVendorQuoteByLineId = useMemo(() => {
+    const map = new Map<string, SelectedVendorQuote>();
+    for (const [lineId, quotes] of Object.entries(vendorQuotes)) {
+      const selected = quotes.find((q) => q.is_selected);
+      if (selected) {
+        map.set(lineId, { id: selected.id, vendor_name: selected.vendor_name, quote_amount: selected.quote_amount });
+      }
+    }
+    return map;
+  }, [vendorQuotes]);
 
   const estimate = useMemo(
     () =>
       computeProjectEstimate(
-        project,
         lineItems,
         recipesMap,
+        companyDefaults,
+        project.default_profit_pct,
         rateContext,
-        new Map(Object.entries(overridesByLine))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        overridesByLineId as any,
+        selectedVendorQuoteByLineId
       ),
-    [project, lineItems, recipesMap, rateContext, overridesByLine]
+    [lineItems, recipesMap, companyDefaults, project.default_profit_pct, rateContext, overridesByLineId, selectedVendorQuoteByLineId]
   );
-  const estimateByLineId = useMemo(
-    () => new Map(estimate.lines.map((l) => [l.lineItemId, l])),
-    [estimate.lines]
-  );
+  const estimateByLineId = useMemo(() => new Map(estimate.lines.map((l) => [l.lineItemId, l])), [estimate.lines]);
 
-  async function handleAdd() {
+  async function handleAddFromCatalog() {
     if (!addBidItemId || !addQuantity) return;
     setAddPending(true);
     const created = await addProjectLineItemAction({
@@ -101,6 +167,18 @@ export function EstimateBuilder({
     setLineItems((rows) => [...rows, created]);
     setAddBidItemId("");
     setAddQuantity("");
+    setAddPending(false);
+  }
+
+  async function handleAddCustom() {
+    if (!customName || !customQuantity) return;
+    setAddPending(true);
+    const { line, recipe } = await addCustomLineItemAction(project.id, customName, customUnit, Number(customQuantity));
+    setLineItems((rows) => [...rows, line]);
+    setRecipesByBidItemId((prev) => ({ ...prev, [recipe.item.id]: recipe }));
+    setCustomName("");
+    setCustomQuantity("");
+    setShowCustomForm(false);
     setAddPending(false);
   }
 
@@ -123,26 +201,33 @@ export function EstimateBuilder({
             {project.bid_date ? ` · Bid ${project.bid_date}` : ""}
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Default markup: {(project.default_overhead_pct * 100).toFixed(1)}% overhead ·{" "}
-            {(project.default_profit_pct * 100).toFixed(1)}% profit ·{" "}
-            {(project.default_contingency_pct * 100).toFixed(1)}% contingency
+            Company markup: {(companyDefaults.overhead_pct * 100).toFixed(1)}% overhead ·{" "}
+            {(companyDefaults.contingency_pct * 100).toFixed(1)}% contingency
           </p>
         </div>
-        <select
-          value={status}
-          onChange={async (e) => {
-            const next = e.target.value as ProjectStatus;
-            setStatus(next);
-            await updateProjectStatusAction(project.id, next);
-          }}
-          className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium capitalize dark:border-zinc-700 dark:bg-zinc-800"
-        >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/projects/${project.id}/review`}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            Review & Quote →
+          </Link>
+          <select
+            value={status}
+            onChange={async (e) => {
+              const next = e.target.value as ProjectStatus;
+              setStatus(next);
+              await updateProjectStatusAction(project.id, next);
+            }}
+            className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium capitalize dark:border-zinc-700 dark:bg-zinc-800"
+          >
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="mb-6 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -154,7 +239,7 @@ export function EstimateBuilder({
             className="w-64 rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
           >
             <option value="">Select a bid item…</option>
-            {bidItems.map((i) => (
+            {catalogBidItems.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.item_name} ({i.unit})
               </option>
@@ -173,11 +258,62 @@ export function EstimateBuilder({
         </label>
         <button
           disabled={!addBidItemId || !addQuantity || addPending}
-          onClick={handleAdd}
+          onClick={handleAddFromCatalog}
           className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
         >
           {addPending ? "Adding…" : "Add item"}
         </button>
+
+        <div className="ml-auto">
+          {!showCustomForm ? (
+            <button
+              onClick={() => setShowCustomForm(true)}
+              className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+            >
+              + Add custom item
+            </button>
+          ) : (
+            <div className="flex items-end gap-2">
+              <input
+                placeholder="Item name"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                className="w-40 rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+              />
+              <select
+                value={customUnit}
+                onChange={(e) => setCustomUnit(e.target.value as BidItem["unit"])}
+                className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+              >
+                {(["SF", "LF", "EA", "SY", "LS", "CY", "TON", "GAL"] as const).map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                placeholder="Qty"
+                value={customQuantity}
+                onChange={(e) => setCustomQuantity(e.target.value)}
+                className="w-20 rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+              />
+              <button
+                disabled={!customName || !customQuantity || addPending}
+                onClick={handleAddCustom}
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => setShowCustomForm(false)}
+                className="text-sm text-zinc-500 hover:underline"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -186,7 +322,7 @@ export function EstimateBuilder({
             <tr>
               <th className="px-4 py-2 font-medium">Item</th>
               <th className="px-4 py-2 font-medium">Qty</th>
-              <th className="px-4 py-2 font-medium">Unit price (raw)</th>
+              <th className="px-4 py-2 font-medium">Unit price (pre-profit)</th>
               <th className="px-4 py-2 font-medium">Rounded rate</th>
               <th className="px-4 py-2 font-medium">Total</th>
               <th className="px-4 py-2" />
@@ -199,51 +335,62 @@ export function EstimateBuilder({
               if (!recipe || !lineEstimate) return null;
               const expanded = expandedLine === line.id;
               return (
-                <LineRow
+                <LineItemRow
                   key={line.id}
                   line={line}
                   recipe={recipe}
                   estimate={lineEstimate}
                   expanded={expanded}
-                  overrides={overridesByLine[line.id] ?? new Map()}
+                  materialOverrides={materialOverrides[line.id] ?? new Map()}
+                  laborOverrides={laborOverrides[line.id] ?? new Map()}
+                  equipmentOverrides={equipmentOverrides[line.id] ?? new Map()}
                   materialsById={materialsById}
+                  crewRates={crewRates}
+                  equipmentRates={equipmentRates}
+                  materials={materials}
+                  vendorQuotes={vendorQuotes[line.id] ?? []}
+                  projectId={project.id}
                   onToggleExpand={() => setExpandedLine(expanded ? null : line.id)}
                   onRemove={() => handleRemove(line.id)}
                   onQuantityChange={(q) => patchLineLocal(line.id, { quantity: q })}
-                  onQuantityCommit={(q) =>
-                    updateProjectLineItemAction(line.id, project.id, { quantity: q })
-                  }
+                  onQuantityCommit={(q) => updateProjectLineItemAction(line.id, project.id, { quantity: q })}
                   onRoundedRateChange={(rate) => patchLineLocal(line.id, { manual_rounded_rate: rate })}
                   onRoundedRateCommit={(rate) =>
                     updateProjectLineItemAction(line.id, project.id, { manual_rounded_rate: rate })
                   }
-                  onOverridePctChange={(patch) => patchLineLocal(line.id, patch)}
-                  onOverridePctCommit={(patch) => updateProjectLineItemAction(line.id, project.id, patch)}
-                  onVendorFieldChange={(patch) => patchLineLocal(line.id, patch)}
-                  onVendorFieldCommit={(patch) => updateProjectLineItemAction(line.id, project.id, patch)}
+                  onFieldChange={(patch) => patchLineLocal(line.id, patch)}
+                  onFieldCommit={(patch) => updateProjectLineItemAction(line.id, project.id, patch)}
                   onMaterialOverrideChange={(materialId, patch) =>
-                    setOverridesByLine((prev) => {
-                      const next = { ...prev };
-                      const lineMap = new Map(next[line.id] ?? []);
-                      const existing = lineMap.get(materialId) ?? {};
-                      lineMap.set(materialId, { ...existing, ...patch });
-                      next[line.id] = lineMap;
-                      return next;
-                    })
+                    setMaterialOverrides((prev) => patchOverrideMap(prev, line.id, materialId, patch))
                   }
                   onMaterialOverrideCommit={(materialId, patch) =>
                     setMaterialOverrideAction(line.id, project.id, materialId, patch)
                   }
                   onMaterialOverrideClear={(materialId) => {
-                    setOverridesByLine((prev) => {
-                      const next = { ...prev };
-                      const lineMap = new Map(next[line.id] ?? []);
-                      lineMap.delete(materialId);
-                      next[line.id] = lineMap;
-                      return next;
-                    });
+                    setMaterialOverrides((prev) => clearOverrideMap(prev, line.id, materialId));
                     clearMaterialOverrideAction(line.id, project.id, materialId);
                   }}
+                  onLaborOverrideChange={(crewRoleId, patch) =>
+                    setLaborOverrides((prev) => patchOverrideMap(prev, line.id, crewRoleId, patch))
+                  }
+                  onLaborOverrideCommit={(crewRoleId, patch) =>
+                    setLaborOverrideAction(line.id, project.id, crewRoleId, patch)
+                  }
+                  onLaborOverrideClear={(crewRoleId) => {
+                    setLaborOverrides((prev) => clearOverrideMap(prev, line.id, crewRoleId));
+                    clearLaborOverrideAction(line.id, project.id, crewRoleId);
+                  }}
+                  onEquipmentOverrideChange={(equipmentId, patch) =>
+                    setEquipmentOverrides((prev) => patchOverrideMap(prev, line.id, equipmentId, patch))
+                  }
+                  onEquipmentOverrideCommit={(equipmentId, patch) =>
+                    setEquipmentOverrideAction(line.id, project.id, equipmentId, patch)
+                  }
+                  onEquipmentOverrideClear={(equipmentId) => {
+                    setEquipmentOverrides((prev) => clearOverrideMap(prev, line.id, equipmentId));
+                    clearEquipmentOverrideAction(line.id, project.id, equipmentId);
+                  }}
+                  onRecipeChanged={refreshRecipes}
                 />
               );
             })}
@@ -259,289 +406,61 @@ export function EstimateBuilder({
       </div>
 
       <div className="mt-6 ml-auto max-w-sm rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <TotalsRow label="Base cost" value={estimate.totalBaseCost} />
-        <TotalsRow label="Overhead" value={estimate.totalOverhead} />
-        <TotalsRow label="Profit" value={estimate.totalProfit} />
-        <TotalsRow label="Contingency" value={estimate.totalContingency} />
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
+          Not final — profit applied on Review
+        </p>
+        <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+          <span>Self-performed (base + OH + contingency)</span>
+          <span>{formatCurrency(estimate.selfPerformed.preProfitTotal)}</span>
+        </div>
+        <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+          <span>Subcontracted</span>
+          <span>{formatCurrency(estimate.subcontracted.total)}</span>
+        </div>
         <div className="mt-2 flex justify-between border-t border-zinc-200 pt-2 text-base font-semibold dark:border-zinc-800">
-          <span>Grand total</span>
-          <span>{formatCurrency(estimate.grandTotal)}</span>
+          <span>Total (pre-profit)</span>
+          <span>{formatCurrency(estimate.grandTotalPreProfit)}</span>
         </div>
       </div>
+
+      <DocumentsPanel projectId={project.id} initialDocuments={initialDocuments} />
     </div>
   );
 }
 
-function TotalsRow({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
-      <span>{label}</span>
-      <span>{formatCurrency(value)}</span>
-    </div>
-  );
+function toOverrideMaps<T extends object, K extends keyof T>(
+  byLine: Record<string, T[]>,
+  keyField: K
+): Record<string, Map<string, T>> {
+  const result: Record<string, Map<string, T>> = {};
+  for (const [lineId, rows] of Object.entries(byLine)) {
+    result[lineId] = new Map(rows.map((r) => [String(r[keyField]), r]));
+  }
+  return result;
 }
 
-function formatCurrency(value: number) {
-  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function patchOverrideMap<T extends object>(
+  prev: Record<string, Map<string, T>>,
+  lineId: string,
+  key: string,
+  patch: Partial<T>
+): Record<string, Map<string, T>> {
+  const next = { ...prev };
+  const lineMap = new Map(next[lineId] ?? []);
+  const existing = lineMap.get(key) ?? ({} as T);
+  lineMap.set(key, { ...existing, ...patch });
+  next[lineId] = lineMap;
+  return next;
 }
 
-function LineRow({
-  line,
-  recipe,
-  estimate,
-  expanded,
-  overrides,
-  materialsById,
-  onToggleExpand,
-  onRemove,
-  onQuantityChange,
-  onQuantityCommit,
-  onRoundedRateChange,
-  onRoundedRateCommit,
-  onOverridePctChange,
-  onOverridePctCommit,
-  onVendorFieldChange,
-  onVendorFieldCommit,
-  onMaterialOverrideChange,
-  onMaterialOverrideCommit,
-  onMaterialOverrideClear,
-}: {
-  line: ProjectLineItem;
-  recipe: BidItemRecipe;
-  estimate: LineItemEstimate;
-  expanded: boolean;
-  overrides: OverrideMap;
-  materialsById: Map<string, Material>;
-  onToggleExpand: () => void;
-  onRemove: () => void;
-  onQuantityChange: (q: number) => void;
-  onQuantityCommit: (q: number) => void;
-  onRoundedRateChange: (rate: number | null) => void;
-  onRoundedRateCommit: (rate: number | null) => void;
-  onOverridePctChange: (patch: Partial<ProjectLineItem>) => void;
-  onOverridePctCommit: (patch: Partial<ProjectLineItem>) => void;
-  onVendorFieldChange: (patch: Partial<ProjectLineItem>) => void;
-  onVendorFieldCommit: (patch: Partial<ProjectLineItem>) => void;
-  onMaterialOverrideChange: (
-    materialId: string,
-    patch: { override_rate?: number | null; override_qty?: number | null }
-  ) => void;
-  onMaterialOverrideCommit: (
-    materialId: string,
-    patch: { override_rate?: number | null; override_qty?: number | null }
-  ) => void;
-  onMaterialOverrideClear: (materialId: string) => void;
-}) {
-  return (
-    <>
-      <tr className="align-top">
-        <td className="px-4 py-2">
-          <div className="font-medium">{recipe.item.item_name}</div>
-          <div className="text-xs text-zinc-500 dark:text-zinc-400">{recipe.item.unit}</div>
-        </td>
-        <td className="px-4 py-2">
-          <input
-            type="number"
-            step="any"
-            value={line.quantity}
-            onChange={(e) => onQuantityChange(Number(e.target.value))}
-            onBlur={(e) => onQuantityCommit(Number(e.target.value))}
-            className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-          />
-        </td>
-        <td className="px-4 py-2">{formatCurrency(estimate.rawUnitPrice)}</td>
-        <td className="px-4 py-2">
-          <input
-            type="number"
-            step="0.01"
-            placeholder={estimate.rawUnitPrice.toFixed(2)}
-            value={line.manual_rounded_rate ?? ""}
-            onChange={(e) => onRoundedRateChange(e.target.value === "" ? null : Number(e.target.value))}
-            onBlur={(e) => onRoundedRateCommit(e.target.value === "" ? null : Number(e.target.value))}
-            className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-          />
-        </td>
-        <td className="px-4 py-2 font-medium">{formatCurrency(estimate.finalTotal)}</td>
-        <td className="px-4 py-2 text-right whitespace-nowrap">
-          <button
-            onClick={onToggleExpand}
-            className="mr-3 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
-          >
-            {expanded ? "Hide details" : "Overrides"}
-          </button>
-          <button onClick={onRemove} className="text-xs font-medium text-red-600 hover:underline dark:text-red-400">
-            Remove
-          </button>
-        </td>
-      </tr>
-      {expanded && (
-        <tr>
-          <td colSpan={6} className="bg-zinc-50 px-4 py-3 dark:bg-zinc-800/40">
-            {recipe.item.item_type === "sub_quote" ? (
-              <div className="flex flex-wrap items-end gap-3 text-xs">
-                <label className="flex flex-col text-zinc-500">
-                  Vendor
-                  <input
-                    defaultValue={line.vendor_name ?? ""}
-                    onBlur={(e) => {
-                      onVendorFieldChange({ vendor_name: e.target.value });
-                      onVendorFieldCommit({ vendor_name: e.target.value });
-                    }}
-                    className="w-40 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-                  />
-                </label>
-                <label className="flex flex-col text-zinc-500">
-                  Vendor quote amount
-                  <input
-                    type="number"
-                    step="0.01"
-                    defaultValue={line.vendor_quote_amount ?? ""}
-                    onBlur={(e) => {
-                      const v = e.target.value === "" ? null : Number(e.target.value);
-                      onVendorFieldChange({ vendor_quote_amount: v });
-                      onVendorFieldCommit({ vendor_quote_amount: v });
-                    }}
-                    className="w-32 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-                  />
-                </label>
-                <label className="flex flex-col text-zinc-500">
-                  Markup %
-                  <input
-                    type="number"
-                    step="0.1"
-                    defaultValue={line.markup_pct != null ? line.markup_pct * 100 : ""}
-                    onBlur={(e) => {
-                      const v = e.target.value === "" ? null : Number(e.target.value) / 100;
-                      onVendorFieldChange({ markup_pct: v });
-                      onVendorFieldCommit({ markup_pct: v });
-                    }}
-                    className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-                  />
-                </label>
-              </div>
-            ) : (
-              <>
-                <div className="mb-3 flex flex-wrap items-end gap-3 text-xs">
-                  <PctOverride
-                    label="Overhead override %"
-                    value={line.override_overhead_pct}
-                    effectivePct={estimate.markup.overheadPct}
-                    onChange={(v) => {
-                      onOverridePctChange({ override_overhead_pct: v });
-                      onOverridePctCommit({ override_overhead_pct: v });
-                    }}
-                  />
-                  <PctOverride
-                    label="Profit override %"
-                    value={line.override_profit_pct}
-                    effectivePct={estimate.markup.profitPct}
-                    onChange={(v) => {
-                      onOverridePctChange({ override_profit_pct: v });
-                      onOverridePctCommit({ override_profit_pct: v });
-                    }}
-                  />
-                  <PctOverride
-                    label="Contingency override %"
-                    value={line.override_contingency_pct}
-                    effectivePct={estimate.markup.contingencyPct}
-                    onChange={(v) => {
-                      onOverridePctChange({ override_contingency_pct: v });
-                      onOverridePctCommit({ override_contingency_pct: v });
-                    }}
-                  />
-                </div>
-                {estimate.base && estimate.base.materials.length > 0 && (
-                  <table className="w-full max-w-2xl text-xs">
-                    <thead className="text-left text-zinc-500 dark:text-zinc-400">
-                      <tr>
-                        <th className="py-1 font-medium">Material</th>
-                        <th className="py-1 font-medium">Qty</th>
-                        <th className="py-1 font-medium">Rate</th>
-                        <th className="py-1 font-medium" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {estimate.base.materials.map((m) => {
-                        const materialRow = materialsById.get(m.material_id);
-                        const override = overrides.get(m.material_id);
-                        return (
-                          <tr key={m.material_id} className="border-t border-zinc-200 dark:border-zinc-700">
-                            <td className="py-1">{m.name}</td>
-                            <td className="py-1">
-                              <input
-                                type="number"
-                                step="any"
-                                placeholder={m.quantity.toFixed(2)}
-                                defaultValue={override?.override_qty ?? ""}
-                                onBlur={(e) => {
-                                  const v = e.target.value === "" ? null : Number(e.target.value);
-                                  onMaterialOverrideChange(m.material_id, { override_qty: v });
-                                  onMaterialOverrideCommit(m.material_id, { override_qty: v });
-                                }}
-                                className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-                              />
-                            </td>
-                            <td className="py-1">
-                              <input
-                                type="number"
-                                step="0.01"
-                                placeholder={(materialRow?.rate ?? m.rate).toFixed(2)}
-                                defaultValue={override?.override_rate ?? ""}
-                                onBlur={(e) => {
-                                  const v = e.target.value === "" ? null : Number(e.target.value);
-                                  onMaterialOverrideChange(m.material_id, { override_rate: v });
-                                  onMaterialOverrideCommit(m.material_id, { override_rate: v });
-                                }}
-                                className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-                              />
-                            </td>
-                            <td className="py-1">
-                              {m.overridden && (
-                                <button
-                                  onClick={() => onMaterialOverrideClear(m.material_id)}
-                                  className="text-red-600 hover:underline dark:text-red-400"
-                                >
-                                  Clear
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </>
-            )}
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-function PctOverride({
-  label,
-  value,
-  effectivePct,
-  onChange,
-}: {
-  label: string;
-  value: number | null;
-  effectivePct: number;
-  onChange: (v: number | null) => void;
-}) {
-  return (
-    <label className="flex flex-col text-zinc-500">
-      {label}
-      <input
-        type="number"
-        step="0.1"
-        placeholder={(effectivePct * 100).toFixed(1)}
-        defaultValue={value != null ? value * 100 : ""}
-        onBlur={(e) => onChange(e.target.value === "" ? null : Number(e.target.value) / 100)}
-        className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-      />
-    </label>
-  );
+function clearOverrideMap<T>(
+  prev: Record<string, Map<string, T>>,
+  lineId: string,
+  key: string
+): Record<string, Map<string, T>> {
+  const next = { ...prev };
+  const lineMap = new Map(next[lineId] ?? []);
+  lineMap.delete(key);
+  next[lineId] = lineMap;
+  return next;
 }

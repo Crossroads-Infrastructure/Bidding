@@ -14,9 +14,7 @@ export function NewProjectForm() {
     location: "",
     dot_or_municipality: "",
     bid_date: "",
-    default_overhead_pct: "10",
     default_profit_pct: "10",
-    default_contingency_pct: "5",
   });
 
   if (!open) {
@@ -42,9 +40,7 @@ export function NewProjectForm() {
           location: form.location || null,
           dot_or_municipality: form.dot_or_municipality || null,
           bid_date: form.bid_date || null,
-          default_overhead_pct: Number(form.default_overhead_pct) / 100,
           default_profit_pct: Number(form.default_profit_pct) / 100,
-          default_contingency_pct: Number(form.default_contingency_pct) / 100,
         });
         setPending(false);
         setOpen(false);
@@ -93,38 +89,19 @@ export function NewProjectForm() {
           onChange={(e) => setForm({ ...form, bid_date: e.target.value })}
         />
       </label>
-      <div className="grid grid-cols-3 gap-2 sm:col-span-2 md:col-span-3">
-        <label className="flex flex-col gap-1 text-sm">
-          Overhead %
-          <input
-            type="number"
-            step="0.1"
-            className="rounded border border-zinc-300 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800"
-            value={form.default_overhead_pct}
-            onChange={(e) => setForm({ ...form, default_overhead_pct: e.target.value })}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Profit %
-          <input
-            type="number"
-            step="0.1"
-            className="rounded border border-zinc-300 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800"
-            value={form.default_profit_pct}
-            onChange={(e) => setForm({ ...form, default_profit_pct: e.target.value })}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Contingency %
-          <input
-            type="number"
-            step="0.1"
-            className="rounded border border-zinc-300 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800"
-            value={form.default_contingency_pct}
-            onChange={(e) => setForm({ ...form, default_contingency_pct: e.target.value })}
-          />
-        </label>
-      </div>
+      <label className="flex flex-col gap-1 text-sm">
+        Starting profit % <span className="text-xs font-normal text-zinc-500">(set live on Review)</span>
+        <input
+          type="number"
+          step="0.1"
+          className="rounded border border-zinc-300 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800"
+          value={form.default_profit_pct}
+          onChange={(e) => setForm({ ...form, default_profit_pct: e.target.value })}
+        />
+      </label>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 sm:col-span-2 md:col-span-3">
+        Overhead and contingency come from the company-wide Rate Library defaults automatically.
+      </p>
       <div className="flex gap-2 sm:col-span-2 md:col-span-3">
         <button
           type="submit"

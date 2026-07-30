@@ -5,7 +5,11 @@ import { useState } from "react";
 import type {
   BidItemUnit,
   BidItemType,
+  CrewGroup,
+  CrewGroupMember,
   CrewRate,
+  EquipmentGroup,
+  EquipmentGroupMember,
   EquipmentRate,
   Material,
   MaterialCalcMethod,
@@ -44,10 +48,18 @@ export function NewBidItemForm({
   crewRates,
   equipmentRates,
   materials,
+  crewGroups,
+  crewGroupMembersByGroup,
+  equipmentGroups,
+  equipmentGroupMembersByGroup,
 }: {
   crewRates: CrewRate[];
   equipmentRates: EquipmentRate[];
   materials: Material[];
+  crewGroups: CrewGroup[];
+  crewGroupMembersByGroup: Record<string, CrewGroupMember[]>;
+  equipmentGroups: EquipmentGroup[];
+  equipmentGroupMembersByGroup: Record<string, EquipmentGroupMember[]>;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -166,6 +178,14 @@ export function NewBidItemForm({
       {itemType !== "sub_quote" && (
         <>
           <RowSection title="Labor">
+            {crewGroups.length > 0 && (
+              <PopulateFromCrewGroup
+                crewGroups={crewGroups}
+                crewGroupMembersByGroup={crewGroupMembersByGroup}
+                crewRates={crewRates}
+                onPopulate={(rows) => setLaborRows((prev) => [...prev, ...rows])}
+              />
+            )}
             {laborRows.map((row, idx) => (
               <div key={idx} className="flex flex-wrap items-end gap-2">
                 <Select
@@ -196,6 +216,13 @@ export function NewBidItemForm({
           </RowSection>
 
           <RowSection title="Equipment">
+            {equipmentGroups.length > 0 && (
+              <PopulateFromEquipmentGroup
+                equipmentGroups={equipmentGroups}
+                equipmentGroupMembersByGroup={equipmentGroupMembersByGroup}
+                onPopulate={(rows) => setEquipmentRows((prev) => [...prev, ...rows])}
+              />
+            )}
             {equipmentRows.map((row, idx) => (
               <div key={idx} className="flex flex-wrap items-end gap-2">
                 <Select
@@ -421,5 +448,100 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
     >
       Remove
     </button>
+  );
+}
+
+// Group selection is a one-time population shortcut: it copies member
+// roles/equipment into normal labor/equipment rows at their default
+// headcounts with one shared hours/unit, then each row is independently
+// editable. No link back to the group is persisted, so editing or
+// deleting the group later never affects items already populated from it.
+function PopulateFromCrewGroup({
+  crewGroups,
+  crewGroupMembersByGroup,
+  crewRates,
+  onPopulate,
+}: {
+  crewGroups: CrewGroup[];
+  crewGroupMembersByGroup: Record<string, CrewGroupMember[]>;
+  crewRates: CrewRate[];
+  onPopulate: (rows: LaborRow[]) => void;
+}) {
+  const [groupId, setGroupId] = useState("");
+  const [hoursPerUnit, setHoursPerUnit] = useState("");
+  const crewById = new Map(crewRates.map((c) => [c.id, c]));
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded border border-dashed border-zinc-300 p-2 dark:border-zinc-700">
+      <Select
+        label="Populate from crew group"
+        value={groupId}
+        onChange={setGroupId}
+        options={crewGroups.map((g) => ({ value: g.id, label: g.group_name }))}
+      />
+      <NumberField label="Hours / unit (shared)" value={hoursPerUnit} onChange={setHoursPerUnit} />
+      <button
+        type="button"
+        disabled={!groupId || !hoursPerUnit}
+        onClick={() => {
+          const members = crewGroupMembersByGroup[groupId] ?? [];
+          const rows: LaborRow[] = members
+            .filter((m) => crewById.has(m.crew_role_id))
+            .map((m) => ({
+              crew_role_id: m.crew_role_id,
+              hours_per_unit: hoursPerUnit,
+              headcount: String(m.default_headcount),
+            }));
+          onPopulate(rows);
+          setGroupId("");
+          setHoursPerUnit("");
+        }}
+        className="rounded bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+      >
+        Populate
+      </button>
+    </div>
+  );
+}
+
+function PopulateFromEquipmentGroup({
+  equipmentGroups,
+  equipmentGroupMembersByGroup,
+  onPopulate,
+}: {
+  equipmentGroups: EquipmentGroup[];
+  equipmentGroupMembersByGroup: Record<string, EquipmentGroupMember[]>;
+  onPopulate: (rows: EquipmentRow[]) => void;
+}) {
+  const [groupId, setGroupId] = useState("");
+  const [hoursPerUnit, setHoursPerUnit] = useState("");
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded border border-dashed border-zinc-300 p-2 dark:border-zinc-700">
+      <Select
+        label="Populate from equipment group"
+        value={groupId}
+        onChange={setGroupId}
+        options={equipmentGroups.map((g) => ({ value: g.id, label: g.group_name }))}
+      />
+      <NumberField label="Hours / unit (shared)" value={hoursPerUnit} onChange={setHoursPerUnit} />
+      <button
+        type="button"
+        disabled={!groupId || !hoursPerUnit}
+        onClick={() => {
+          const members = equipmentGroupMembersByGroup[groupId] ?? [];
+          const rows: EquipmentRow[] = members.map((m) => ({
+            equipment_id: m.equipment_id,
+            hours_per_unit: hoursPerUnit,
+          }));
+          onPopulate(rows);
+          setGroupId("");
+          setHoursPerUnit("");
+        }}
+        className="rounded bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+      >
+        Populate
+      </button>
+    </div>
   );
 }

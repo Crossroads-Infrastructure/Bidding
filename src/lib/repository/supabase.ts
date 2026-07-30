@@ -1,24 +1,54 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   BidItem,
+  BidItemEquipment,
+  BidItemLabor,
+  BidItemMaterial,
   BidItemRecipe,
+  CompanyDefaults,
+  CrewGroup,
+  CrewGroupMember,
   CrewRate,
+  EquipmentGroup,
+  EquipmentGroupMember,
   EquipmentRate,
   Material,
   Project,
+  ProjectDocument,
   ProjectLineItem,
+  ProjectLineItemEquipmentOverride,
+  ProjectLineItemLaborOverride,
   ProjectLineItemMaterialOverride,
+  ProjectLineItemVendorQuote,
 } from "@/types/domain";
 import type {
+  BidItemEquipmentRowUpdate,
+  BidItemLaborRowUpdate,
+  BidItemMaterialRowUpdate,
+  EquipmentOverrideInput,
+  LaborOverrideInput,
+  NewBidItemEquipmentRowInput,
   NewBidItemInput,
+  NewBidItemLaborRowInput,
+  NewBidItemMaterialRowInput,
+  NewCompanyDefaultsInput,
+  NewCrewGroupInput,
+  NewCrewGroupMemberInput,
   NewCrewRateInput,
+  NewEquipmentGroupInput,
+  NewEquipmentGroupMemberInput,
   NewEquipmentRateInput,
   NewMaterialInput,
+  NewProjectDocumentInput,
   NewProjectInput,
   NewProjectLineItemInput,
+  NewVendorQuoteInput,
   ProjectLineItemUpdate,
   Repository,
+  VendorQuoteUpdate,
 } from "./types";
+
+const DOCUMENTS_BUCKET = "project-documents";
 
 function unwrap<T>({ data, error }: { data: T | null; error: { message: string } | null }): T {
   if (error) throw new Error(error.message);
@@ -34,9 +64,7 @@ export class SupabaseRepository implements Repository {
   }
 
   async listCrewRates() {
-    return unwrap<CrewRate[]>(
-      await this.client.from("crew_rates").select("*").order("role_name")
-    );
+    return unwrap<CrewRate[]>(await this.client.from("crew_rates").select("*").order("role_name"));
   }
 
   async getCurrentCrewRate(roleName: string) {
@@ -59,18 +87,12 @@ export class SupabaseRepository implements Repository {
     if (updateError) throw new Error(updateError.message);
 
     return unwrap<CrewRate>(
-      await this.client
-        .from("crew_rates")
-        .insert({ ...input, is_current: true })
-        .select()
-        .single()
+      await this.client.from("crew_rates").insert({ ...input, is_current: true }).select().single()
     );
   }
 
   async listEquipmentRates() {
-    return unwrap<EquipmentRate[]>(
-      await this.client.from("equipment_rates").select("*").order("equipment_name")
-    );
+    return unwrap<EquipmentRate[]>(await this.client.from("equipment_rates").select("*").order("equipment_name"));
   }
 
   async getCurrentEquipmentRate(equipmentName: string) {
@@ -102,9 +124,7 @@ export class SupabaseRepository implements Repository {
   }
 
   async listMaterials() {
-    return unwrap<Material[]>(
-      await this.client.from("materials").select("*").order("material_name")
-    );
+    return unwrap<Material[]>(await this.client.from("materials").select("*").order("material_name"));
   }
 
   async getCurrentMaterial(materialName: string) {
@@ -127,17 +147,136 @@ export class SupabaseRepository implements Repository {
     if (updateError) throw new Error(updateError.message);
 
     return unwrap<Material>(
+      await this.client.from("materials").insert({ ...input, is_current: true }).select().single()
+    );
+  }
+
+  async getCurrentCompanyDefaults() {
+    const { data, error } = await this.client
+      .from("company_defaults")
+      .select("*")
+      .eq("is_current", true)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as CompanyDefaults | null) ?? undefined;
+  }
+
+  async addCompanyDefaults(input: NewCompanyDefaultsInput) {
+    const { error: updateError } = await this.client
+      .from("company_defaults")
+      .update({ is_current: false })
+      .eq("is_current", true);
+    if (updateError) throw new Error(updateError.message);
+
+    return unwrap<CompanyDefaults>(
       await this.client
-        .from("materials")
+        .from("company_defaults")
         .insert({ ...input, is_current: true })
         .select()
         .single()
     );
   }
 
+  // ---------------- Crew / equipment groups ----------------
+
+  async listCrewGroups() {
+    return unwrap<CrewGroup[]>(await this.client.from("crew_groups").select("*").order("group_name"));
+  }
+
+  async listCrewGroupMembers(crewGroupId: string) {
+    return unwrap<CrewGroupMember[]>(
+      await this.client.from("crew_group_members").select("*").eq("crew_group_id", crewGroupId)
+    );
+  }
+
+  async createCrewGroup(input: NewCrewGroupInput) {
+    return unwrap<CrewGroup>(await this.client.from("crew_groups").insert(input).select().single());
+  }
+
+  async updateCrewGroup(id: string, patch: Partial<NewCrewGroupInput>) {
+    return unwrap<CrewGroup>(
+      await this.client.from("crew_groups").update(patch).eq("id", id).select().single()
+    );
+  }
+
+  async deleteCrewGroup(id: string) {
+    const { error } = await this.client.from("crew_groups").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  }
+
+  async addCrewGroupMember(crewGroupId: string, input: NewCrewGroupMemberInput) {
+    return unwrap<CrewGroupMember>(
+      await this.client
+        .from("crew_group_members")
+        .insert({ ...input, crew_group_id: crewGroupId })
+        .select()
+        .single()
+    );
+  }
+
+  async updateCrewGroupMember(id: string, patch: { default_headcount: number }) {
+    return unwrap<CrewGroupMember>(
+      await this.client.from("crew_group_members").update(patch).eq("id", id).select().single()
+    );
+  }
+
+  async removeCrewGroupMember(id: string) {
+    const { error } = await this.client.from("crew_group_members").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  }
+
+  async listEquipmentGroups() {
+    return unwrap<EquipmentGroup[]>(
+      await this.client.from("equipment_groups").select("*").order("group_name")
+    );
+  }
+
+  async listEquipmentGroupMembers(equipmentGroupId: string) {
+    return unwrap<EquipmentGroupMember[]>(
+      await this.client
+        .from("equipment_group_members")
+        .select("*")
+        .eq("equipment_group_id", equipmentGroupId)
+    );
+  }
+
+  async createEquipmentGroup(input: NewEquipmentGroupInput) {
+    return unwrap<EquipmentGroup>(
+      await this.client.from("equipment_groups").insert(input).select().single()
+    );
+  }
+
+  async updateEquipmentGroup(id: string, patch: Partial<NewEquipmentGroupInput>) {
+    return unwrap<EquipmentGroup>(
+      await this.client.from("equipment_groups").update(patch).eq("id", id).select().single()
+    );
+  }
+
+  async deleteEquipmentGroup(id: string) {
+    const { error } = await this.client.from("equipment_groups").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  }
+
+  async addEquipmentGroupMember(equipmentGroupId: string, input: NewEquipmentGroupMemberInput) {
+    return unwrap<EquipmentGroupMember>(
+      await this.client
+        .from("equipment_group_members")
+        .insert({ ...input, equipment_group_id: equipmentGroupId })
+        .select()
+        .single()
+    );
+  }
+
+  async removeEquipmentGroupMember(id: string) {
+    const { error } = await this.client.from("equipment_group_members").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  }
+
+  // ---------------- Bid item catalog ----------------
+
   async listBidItems() {
     return unwrap<BidItem[]>(
-      await this.client.from("bid_items").select("*").order("item_name")
+      await this.client.from("bid_items").select("*").eq("is_saved_to_library", true).order("item_name")
     );
   }
 
@@ -148,6 +287,7 @@ export class SupabaseRepository implements Repository {
       await this.client
         .from("bid_items")
         .select("*")
+        .eq("is_saved_to_library", true)
         .or(`item_name.ilike.%${q}%,description.ilike.%${q}%`)
         .order("item_name")
     );
@@ -188,6 +328,7 @@ export class SupabaseRepository implements Repository {
           default_profit_pct: input.default_profit_pct ?? null,
           default_contingency_pct: input.default_contingency_pct ?? null,
           notes: input.notes ?? null,
+          is_saved_to_library: input.is_saved_to_library ?? true,
         })
         .select()
         .single()
@@ -233,6 +374,7 @@ export class SupabaseRepository implements Repository {
       default_profit_pct: source.item.default_profit_pct,
       default_contingency_pct: source.item.default_contingency_pct,
       notes: source.item.notes,
+      is_saved_to_library: true,
       labor: source.labor.map((l) => ({
         crew_role_id: l.crew_role_id,
         hours_per_unit: l.hours_per_unit,
@@ -245,6 +387,82 @@ export class SupabaseRepository implements Repository {
       materials: source.materials.map(({ id: _id, bid_item_id: _bid_item_id, ...rest }) => rest),
     });
   }
+
+  async saveBidItemToLibrary(bidItemId: string) {
+    return unwrap<BidItem>(
+      await this.client
+        .from("bid_items")
+        .update({ is_saved_to_library: true })
+        .eq("id", bidItemId)
+        .select()
+        .single()
+    );
+  }
+
+  async addBidItemLaborRow(bidItemId: string, input: NewBidItemLaborRowInput) {
+    return unwrap<BidItemLabor>(
+      await this.client
+        .from("bid_item_labor")
+        .insert({ ...input, bid_item_id: bidItemId })
+        .select()
+        .single()
+    );
+  }
+
+  async updateBidItemLaborRow(rowId: string, patch: BidItemLaborRowUpdate) {
+    return unwrap<BidItemLabor>(
+      await this.client.from("bid_item_labor").update(patch).eq("id", rowId).select().single()
+    );
+  }
+
+  async removeBidItemLaborRow(rowId: string) {
+    const { error } = await this.client.from("bid_item_labor").delete().eq("id", rowId);
+    if (error) throw new Error(error.message);
+  }
+
+  async addBidItemEquipmentRow(bidItemId: string, input: NewBidItemEquipmentRowInput) {
+    return unwrap<BidItemEquipment>(
+      await this.client
+        .from("bid_item_equipment")
+        .insert({ ...input, bid_item_id: bidItemId })
+        .select()
+        .single()
+    );
+  }
+
+  async updateBidItemEquipmentRow(rowId: string, patch: BidItemEquipmentRowUpdate) {
+    return unwrap<BidItemEquipment>(
+      await this.client.from("bid_item_equipment").update(patch).eq("id", rowId).select().single()
+    );
+  }
+
+  async removeBidItemEquipmentRow(rowId: string) {
+    const { error } = await this.client.from("bid_item_equipment").delete().eq("id", rowId);
+    if (error) throw new Error(error.message);
+  }
+
+  async addBidItemMaterialRow(bidItemId: string, input: NewBidItemMaterialRowInput) {
+    return unwrap<BidItemMaterial>(
+      await this.client
+        .from("bid_item_materials")
+        .insert({ ...input, bid_item_id: bidItemId })
+        .select()
+        .single()
+    );
+  }
+
+  async updateBidItemMaterialRow(rowId: string, patch: BidItemMaterialRowUpdate) {
+    return unwrap<BidItemMaterial>(
+      await this.client.from("bid_item_materials").update(patch).eq("id", rowId).select().single()
+    );
+  }
+
+  async removeBidItemMaterialRow(rowId: string) {
+    const { error } = await this.client.from("bid_item_materials").delete().eq("id", rowId);
+    if (error) throw new Error(error.message);
+  }
+
+  // ---------------- Projects ----------------
 
   async listProjects() {
     return unwrap<Project[]>(
@@ -266,7 +484,7 @@ export class SupabaseRepository implements Repository {
     return unwrap<Project>(
       await this.client
         .from("projects")
-        .insert({ ...input, status: "estimating" })
+        .insert({ ...input, default_profit_pct: input.default_profit_pct ?? 0, status: "estimating" })
         .select()
         .single()
     );
@@ -274,14 +492,22 @@ export class SupabaseRepository implements Repository {
 
   async updateProjectStatus(projectId: string, status: Project["status"]) {
     return unwrap<Project>(
+      await this.client.from("projects").update({ status }).eq("id", projectId).select().single()
+    );
+  }
+
+  async updateProjectLastUsedProfit(projectId: string, profitPct: number) {
+    return unwrap<Project>(
       await this.client
         .from("projects")
-        .update({ status })
+        .update({ default_profit_pct: profitPct })
         .eq("id", projectId)
         .select()
         .single()
     );
   }
+
+  // ---------------- Project line items ----------------
 
   async listProjectLineItems(projectId: string) {
     return unwrap<ProjectLineItem[]>(
@@ -304,10 +530,20 @@ export class SupabaseRepository implements Repository {
     );
     const nextSort = existing.length ? existing[0].sort_order + 1 : 0;
 
+    let isSubcontracted = input.is_subcontracted;
+    if (isSubcontracted === undefined) {
+      const { data: bidItem } = await this.client
+        .from("bid_items")
+        .select("item_type")
+        .eq("id", input.bid_item_id)
+        .maybeSingle();
+      isSubcontracted = bidItem?.item_type === "sub_quote";
+    }
+
     const created = unwrap<ProjectLineItem>(
       await this.client
         .from("project_line_items")
-        .insert({ ...input, sort_order: nextSort })
+        .insert({ ...input, is_subcontracted: isSubcontracted, sort_order: nextSort })
         .select()
         .single()
     );
@@ -331,6 +567,8 @@ export class SupabaseRepository implements Repository {
     if (error) throw new Error(error.message);
   }
 
+  // ---------------- Material / labor / equipment overrides ----------------
+
   async listMaterialOverrides(projectLineItemId: string) {
     return unwrap<ProjectLineItemMaterialOverride[]>(
       await this.client
@@ -349,11 +587,7 @@ export class SupabaseRepository implements Repository {
       await this.client
         .from("project_line_item_material_overrides")
         .upsert(
-          {
-            project_line_item_id: projectLineItemId,
-            material_id: materialId,
-            ...override,
-          },
+          { project_line_item_id: projectLineItemId, material_id: materialId, ...override },
           { onConflict: "project_line_item_id,material_id" }
         )
         .select()
@@ -367,6 +601,197 @@ export class SupabaseRepository implements Repository {
       .delete()
       .eq("project_line_item_id", projectLineItemId)
       .eq("material_id", materialId);
+    if (error) throw new Error(error.message);
+  }
+
+  async listLaborOverrides(projectLineItemId: string) {
+    return unwrap<ProjectLineItemLaborOverride[]>(
+      await this.client
+        .from("project_line_item_labor_overrides")
+        .select("*")
+        .eq("project_line_item_id", projectLineItemId)
+    );
+  }
+
+  async setLaborOverride(projectLineItemId: string, crewRoleId: string, override: LaborOverrideInput) {
+    return unwrap<ProjectLineItemLaborOverride>(
+      await this.client
+        .from("project_line_item_labor_overrides")
+        .upsert(
+          { project_line_item_id: projectLineItemId, crew_role_id: crewRoleId, ...override },
+          { onConflict: "project_line_item_id,crew_role_id" }
+        )
+        .select()
+        .single()
+    );
+  }
+
+  async clearLaborOverride(projectLineItemId: string, crewRoleId: string) {
+    const { error } = await this.client
+      .from("project_line_item_labor_overrides")
+      .delete()
+      .eq("project_line_item_id", projectLineItemId)
+      .eq("crew_role_id", crewRoleId);
+    if (error) throw new Error(error.message);
+  }
+
+  async listEquipmentOverrides(projectLineItemId: string) {
+    return unwrap<ProjectLineItemEquipmentOverride[]>(
+      await this.client
+        .from("project_line_item_equipment_overrides")
+        .select("*")
+        .eq("project_line_item_id", projectLineItemId)
+    );
+  }
+
+  async setEquipmentOverride(projectLineItemId: string, equipmentId: string, override: EquipmentOverrideInput) {
+    return unwrap<ProjectLineItemEquipmentOverride>(
+      await this.client
+        .from("project_line_item_equipment_overrides")
+        .upsert(
+          { project_line_item_id: projectLineItemId, equipment_id: equipmentId, ...override },
+          { onConflict: "project_line_item_id,equipment_id" }
+        )
+        .select()
+        .single()
+    );
+  }
+
+  async clearEquipmentOverride(projectLineItemId: string, equipmentId: string) {
+    const { error } = await this.client
+      .from("project_line_item_equipment_overrides")
+      .delete()
+      .eq("project_line_item_id", projectLineItemId)
+      .eq("equipment_id", equipmentId);
+    if (error) throw new Error(error.message);
+  }
+
+  // ---------------- Vendor quotes (subcontracting) ----------------
+
+  async listVendorQuotes(projectLineItemId: string) {
+    return unwrap<ProjectLineItemVendorQuote[]>(
+      await this.client
+        .from("project_line_item_vendor_quotes")
+        .select("*")
+        .eq("project_line_item_id", projectLineItemId)
+    );
+  }
+
+  async addVendorQuote(projectLineItemId: string, input: NewVendorQuoteInput) {
+    const existing = unwrap<ProjectLineItemVendorQuote[]>(
+      await this.client
+        .from("project_line_item_vendor_quotes")
+        .select("*")
+        .eq("project_line_item_id", projectLineItemId)
+    );
+    return unwrap<ProjectLineItemVendorQuote>(
+      await this.client
+        .from("project_line_item_vendor_quotes")
+        .insert({
+          project_line_item_id: projectLineItemId,
+          vendor_name: input.vendor_name,
+          quote_amount: input.quote_amount,
+          notes: input.notes ?? null,
+          is_selected: existing.length === 0,
+        })
+        .select()
+        .single()
+    );
+  }
+
+  async updateVendorQuote(id: string, patch: VendorQuoteUpdate) {
+    if (patch.is_selected) {
+      const { data: quote } = await this.client
+        .from("project_line_item_vendor_quotes")
+        .select("project_line_item_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (quote) {
+        await this.client
+          .from("project_line_item_vendor_quotes")
+          .update({ is_selected: false })
+          .eq("project_line_item_id", quote.project_line_item_id);
+      }
+    }
+    return unwrap<ProjectLineItemVendorQuote>(
+      await this.client
+        .from("project_line_item_vendor_quotes")
+        .update(patch)
+        .eq("id", id)
+        .select()
+        .single()
+    );
+  }
+
+  async selectVendorQuote(projectLineItemId: string, quoteId: string) {
+    await this.client
+      .from("project_line_item_vendor_quotes")
+      .update({ is_selected: false })
+      .eq("project_line_item_id", projectLineItemId);
+    return unwrap<ProjectLineItemVendorQuote>(
+      await this.client
+        .from("project_line_item_vendor_quotes")
+        .update({ is_selected: true })
+        .eq("id", quoteId)
+        .select()
+        .single()
+    );
+  }
+
+  async removeVendorQuote(id: string) {
+    const { error } = await this.client.from("project_line_item_vendor_quotes").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  }
+
+  // ---------------- Bid history ----------------
+
+  async listBidHistory(bidItemId: string) {
+    return unwrap<Array<{ unit_price_bid: number; outcome: string | null; date: string }>>(
+      await this.client
+        .from("bid_history")
+        .select("unit_price_bid, outcome, date")
+        .eq("bid_item_id", bidItemId)
+    );
+  }
+
+  // ---------------- Documents ----------------
+
+  async listProjectDocuments(projectId: string) {
+    return unwrap<ProjectDocument[]>(
+      await this.client
+        .from("project_documents")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("uploaded_date", { ascending: false })
+    );
+  }
+
+  async addProjectDocument(input: NewProjectDocumentInput) {
+    const path = `${input.project_id}/${input.category}/${Date.now()}-${input.file_name}`;
+    const { error: uploadError } = await this.client.storage
+      .from(DOCUMENTS_BUCKET)
+      .upload(path, input.content, { contentType: "application/octet-stream" });
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data: publicUrl } = this.client.storage.from(DOCUMENTS_BUCKET).getPublicUrl(path);
+
+    return unwrap<ProjectDocument>(
+      await this.client
+        .from("project_documents")
+        .insert({
+          project_id: input.project_id,
+          category: input.category,
+          file_name: input.file_name,
+          file_size: input.file_size,
+          file_url: publicUrl.publicUrl,
+        })
+        .select()
+        .single()
+    );
+  }
+
+  async removeProjectDocument(id: string) {
+    const { error } = await this.client.from("project_documents").delete().eq("id", id);
     if (error) throw new Error(error.message);
   }
 }

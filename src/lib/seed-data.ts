@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type {
   BidItemRecipe,
+  CompanyDefaults,
+  CrewGroup,
+  CrewGroupMember,
   CrewRate,
+  EquipmentGroup,
+  EquipmentGroupMember,
   EquipmentRate,
   Material,
 } from "@/types/domain";
@@ -89,6 +94,7 @@ const foreman = byName(seedCrewRates, "Foreman");
 const laborer = byName(seedCrewRates, "Laborer");
 
 const excavator = byName(seedEquipmentRates, "Excavator (Mid-size)");
+const dozer = byName(seedEquipmentRates, "Dozer (D6)");
 const paver = byName(seedEquipmentRates, "Asphalt Paver");
 const roller = byName(seedEquipmentRates, "Double Drum Roller");
 
@@ -99,7 +105,7 @@ const beddingStone = byName(seedMaterials, "Bedding Stone (#57)");
 const rcpPipe = byName(seedMaterials, 'RCP Pipe, 15"');
 
 function recipe(
-  overrides: Omit<BidItemRecipe["item"], "id" | "created_date" | "last_used_date">,
+  overrides: Omit<BidItemRecipe["item"], "id" | "created_date" | "last_used_date" | "is_saved_to_library">,
   labor: Array<{ crew_role_id: string; hours_per_unit: number; headcount: number }>,
   equipmentLines: Array<{ equipment_id: string; hours_per_unit: number }>,
   materials: Array<Omit<BidItemRecipe["materials"][number], "id" | "bid_item_id">>
@@ -111,6 +117,7 @@ function recipe(
       id: item_id,
       created_date: new Date().toISOString(),
       last_used_date: null,
+      is_saved_to_library: true,
     },
     labor: labor.map((l) => ({ id: randomUUID(), bid_item_id: item_id, ...l })),
     equipment: equipmentLines.map((e) => ({ id: randomUUID(), bid_item_id: item_id, ...e })),
@@ -298,4 +305,41 @@ export const seedBidItems: BidItemRecipe[] = [
     [],
     []
   ),
+];
+
+export const seedCompanyDefaults: CompanyDefaults[] = [
+  {
+    id: randomUUID(),
+    overhead_pct: 0.1,
+    contingency_pct: 0.05,
+    effective_date: sixMonthsAgo,
+    is_current: true,
+    created_at: new Date().toISOString(),
+  },
+];
+
+const gradingCrewGroupId = randomUUID();
+const pavingCrewGroupId = randomUUID();
+const excavatorGroupId = randomUUID();
+
+export const seedCrewGroups: CrewGroup[] = [
+  { id: gradingCrewGroupId, group_name: "Grading Crew", description: "Standard earthwork crew" },
+  { id: pavingCrewGroupId, group_name: "Paving Crew", description: "HMA placement crew" },
+];
+
+export const seedCrewGroupMembers: CrewGroupMember[] = [
+  { id: randomUUID(), crew_group_id: gradingCrewGroupId, crew_role_id: operator.id, default_headcount: 1 },
+  { id: randomUUID(), crew_group_id: gradingCrewGroupId, crew_role_id: laborer.id, default_headcount: 1 },
+  { id: randomUUID(), crew_group_id: pavingCrewGroupId, crew_role_id: operator.id, default_headcount: 2 },
+  { id: randomUUID(), crew_group_id: pavingCrewGroupId, crew_role_id: laborer.id, default_headcount: 1 },
+  { id: randomUUID(), crew_group_id: pavingCrewGroupId, crew_role_id: foreman.id, default_headcount: 1 },
+];
+
+export const seedEquipmentGroups: EquipmentGroup[] = [
+  { id: excavatorGroupId, group_name: "Excavation Spread", description: "Excavator + dozer" },
+];
+
+export const seedEquipmentGroupMembers: EquipmentGroupMember[] = [
+  { id: randomUUID(), equipment_group_id: excavatorGroupId, equipment_id: excavator.id },
+  { id: randomUUID(), equipment_group_id: excavatorGroupId, equipment_id: dozer.id },
 ];
