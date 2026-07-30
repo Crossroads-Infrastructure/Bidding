@@ -7,15 +7,16 @@ import {
   computeMaterialQuantity,
   computeProjectEstimate,
   resolveOverheadPct,
+  resolveProfitPct,
 } from "./calc-engine";
 import type {
   BidItem,
   BidItemMaterial,
   BidItemRecipe,
+  CompanyDefaults,
   CrewRate,
   EquipmentRate,
   Material,
-  Project,
   ProjectLineItem,
 } from "@/types/domain";
 
@@ -189,6 +190,7 @@ function makeRecipe(): { recipe: BidItemRecipe; rates: RateContext } {
     notes: null,
     created_date: "2026-01-01T00:00:00.000Z",
     last_used_date: null,
+    is_saved_to_library: true,
   };
   const recipe: BidItemRecipe = {
     item,
@@ -199,6 +201,39 @@ function makeRecipe(): { recipe: BidItemRecipe; rates: RateContext } {
     ],
   };
   return { recipe, rates: new RateContext([crew], [equip], [material]) };
+}
+
+function makeLine(overrides: Partial<ProjectLineItem> = {}): ProjectLineItem {
+  return {
+    id: "line-1",
+    project_id: "proj-1",
+    bid_item_id: "item-1",
+    quantity: 100,
+    override_overhead_pct: null,
+    override_profit_pct: null,
+    override_contingency_pct: null,
+    manual_rounded_rate: null,
+    sort_order: 0,
+    created_at: "2026-01-01T00:00:00.000Z",
+    notes_override: null,
+    item_number_override: null,
+    item_name_override: null,
+    is_subcontracted: false,
+    sub_markup_pct: null,
+    ...overrides,
+  };
+}
+
+function makeCompany(overrides: Partial<CompanyDefaults> = {}): CompanyDefaults {
+  return {
+    id: "company-1",
+    overhead_pct: 0.1,
+    contingency_pct: 0.05,
+    effective_date: "2026-01-01",
+    is_current: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 describe("computeLineItemBaseCost", () => {
@@ -219,28 +254,34 @@ describe("computeLineItemBaseCost", () => {
 
   it("applies a material rate/qty override", () => {
     const { recipe, rates } = makeRecipe();
-    const overrides = new Map([["material-1", { override_rate: 25, override_qty: undefined }]]);
-    const result = computeLineItemBaseCost(recipe, 100, rates, overrides as never);
+    const overrides = { materials: new Map([["material-1", { override_rate: 25 }]]) };
+    const result = computeLineItemBaseCost(recipe, 100, rates, overrides);
     const materialLine = result.materials[0];
     expect(materialLine.rate).toBe(25);
     expect(materialLine.overridden).toBe(true);
   });
+
+  it("applies a labor hours_per_unit/headcount override (project-only, mirrors material pattern)", () => {
+    const { recipe, rates } = makeRecipe();
+    const overrides = { labor: new Map([["crew-1", { override_hours: 0.05, override_headcount: 3 }]]) };
+    const result = computeLineItemBaseCost(recipe, 100, rates, overrides);
+    const laborLine = result.labor[0];
+    expect(laborLine.hours).toBeCloseTo(100 * 0.05 * 3);
+    expect(laborLine.overridden).toBe(true);
+  });
+
+  it("applies an equipment hours_per_unit override", () => {
+    const { recipe, rates } = makeRecipe();
+    const overrides = { equipment: new Map([["equip-1", { override_hours: 0.03 }]]) };
+    const result = computeLineItemBaseCost(recipe, 100, rates, overrides);
+    const equipmentLine = result.equipment[0];
+    expect(equipmentLine.hours).toBeCloseTo(100 * 0.03);
+    expect(equipmentLine.overridden).toBe(true);
+  });
 });
 
 describe("markup override hierarchy", () => {
-  const project: Project = {
-    id: "proj-1",
-    project_name: "Test Project",
-    client: null,
-    location: null,
-    dot_or_municipality: null,
-    bid_date: null,
-    status: "estimating",
-    default_overhead_pct: 0.1,
-    default_profit_pct: 0.08,
-    default_contingency_pct: 0.05,
-    created_at: "2026-01-01T00:00:00.000Z",
-  };
+  const company = makeCompany({ overhead_pct: 0.1, contingency_pct: 0.05 });
   const item: BidItem = {
     id: "item-1",
     item_name: "Item",
@@ -253,36 +294,29 @@ describe("markup override hierarchy", () => {
     notes: null,
     created_date: "2026-01-01T00:00:00.000Z",
     last_used_date: null,
+    is_saved_to_library: true,
   };
-  const line: ProjectLineItem = {
-    id: "line-1",
-    project_id: "proj-1",
-    bid_item_id: "item-1",
-    quantity: 10,
-    override_overhead_pct: null,
-    override_profit_pct: null,
-    override_contingency_pct: null,
-    manual_rounded_rate: null,
-    vendor_name: null,
-    vendor_quote_amount: null,
-    markup_pct: null,
-    sort_order: 0,
-    created_at: "2026-01-01T00:00:00.000Z",
-  };
+  const line = makeLine();
 
-  it("falls back to project default when nothing is overridden", () => {
-    expect(resolveOverheadPct(line, item, project)).toBe(0.1);
+  it("falls back to company defaults when nothing is overridden", () => {
+    expect(resolveOverheadPct(line, item, company)).toBe(0.1);
   });
 
-  it("item default wins over project default", () => {
+  it("item default wins over company default", () => {
     const itemWithDefault = { ...item, default_overhead_pct: 0.2 };
-    expect(resolveOverheadPct(line, itemWithDefault, project)).toBe(0.2);
+    expect(resolveOverheadPct(line, itemWithDefault, company)).toBe(0.2);
   });
 
-  it("line override wins over item default and project default", () => {
+  it("line override wins over item default and company default", () => {
     const itemWithDefault = { ...item, default_overhead_pct: 0.2 };
-    const lineWithOverride = { ...line, override_overhead_pct: 0.35 };
-    expect(resolveOverheadPct(lineWithOverride, itemWithDefault, project)).toBe(0.35);
+    const lineWithOverride = makeLine({ override_overhead_pct: 0.35 });
+    expect(resolveOverheadPct(lineWithOverride, itemWithDefault, company)).toBe(0.35);
+  });
+
+  it("profit falls back to the live Review-screen value, not a stored project field", () => {
+    expect(resolveProfitPct(line, item, 0.12)).toBeCloseTo(0.12);
+    const lineWithOverride = makeLine({ override_profit_pct: 0.2 });
+    expect(resolveProfitPct(lineWithOverride, item, 0.12)).toBeCloseTo(0.2);
   });
 
   it("computeMarkup sums independently (not compounded) off base cost", () => {
@@ -294,142 +328,109 @@ describe("markup override hierarchy", () => {
   });
 });
 
-describe("computeLineItemEstimate: sub_quote", () => {
-  it("prices vendor_quote_amount * (1 + markup_pct), bypassing labor/equipment/material", () => {
-    const project: Project = {
-      id: "proj-1",
-      project_name: "P",
-      client: null,
-      location: null,
-      dot_or_municipality: null,
-      bid_date: null,
-      status: "estimating",
-      default_overhead_pct: 0.1,
-      default_profit_pct: 0.1,
-      default_contingency_pct: 0.05,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
-    const item: BidItem = {
-      id: "sub-1",
-      item_name: "Traffic Control",
-      description: null,
-      unit: "LS",
-      item_type: "sub_quote",
-      default_overhead_pct: null,
-      default_profit_pct: null,
-      default_contingency_pct: null,
-      notes: null,
-      created_date: "2026-01-01T00:00:00.000Z",
-      last_used_date: null,
-    };
-    const line: ProjectLineItem = {
-      id: "line-1",
-      project_id: "proj-1",
-      bid_item_id: "sub-1",
-      quantity: 1,
-      override_overhead_pct: null,
-      override_profit_pct: null,
-      override_contingency_pct: null,
-      manual_rounded_rate: null,
-      vendor_name: "ABC Traffic",
-      vendor_quote_amount: 10000,
-      markup_pct: 0.1,
-      sort_order: 0,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
-    const recipe: BidItemRecipe = { item, labor: [], equipment: [], materials: [] };
-    const estimate = computeLineItemEstimate(project, line, recipe, new RateContext([], [], []));
-    expect(estimate.isSubQuote).toBe(true);
-    expect(estimate.rawTotal).toBeCloseTo(11000);
-    expect(estimate.finalTotal).toBeCloseTo(11000);
+describe("computeLineItemEstimate: self-performed", () => {
+  it("preProfitTotal excludes profit; rawTotal/finalTotal include it", () => {
+    const { recipe, rates } = makeRecipe();
+    const company = makeCompany({ overhead_pct: 0.1, contingency_pct: 0.05 });
+    const line = makeLine({ quantity: 100 });
+    const estimate = computeLineItemEstimate(line, recipe, company, 0.1, rates);
+
+    expect(estimate.isSubcontracted).toBe(false);
+    expect(estimate.preProfitTotal).toBeCloseTo(estimate.base!.baseCost * 1.15);
+    expect(estimate.rawTotal).toBeCloseTo(estimate.base!.baseCost * 1.25);
+    expect(estimate.rawTotal).toBeGreaterThan(estimate.preProfitTotal);
   });
 });
 
-describe("computeProjectEstimate", () => {
-  it("un-overridden lines behave as if the project default were applied once to the pooled base cost", () => {
+describe("computeLineItemEstimate: subcontracted", () => {
+  it("prices the selected vendor quote * (1 + sub_markup_pct), skipping company overhead/contingency/profit", () => {
     const { recipe, rates } = makeRecipe();
-    const project: Project = {
-      id: "proj-1",
-      project_name: "P",
-      client: null,
-      location: null,
-      dot_or_municipality: null,
-      bid_date: null,
-      status: "estimating",
-      default_overhead_pct: 0.1,
-      default_profit_pct: 0.08,
-      default_contingency_pct: 0.05,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
-    const lineA: ProjectLineItem = {
-      id: "line-a",
-      project_id: "proj-1",
-      bid_item_id: "item-1",
-      quantity: 100,
-      override_overhead_pct: null,
-      override_profit_pct: null,
-      override_contingency_pct: null,
-      manual_rounded_rate: null,
-      vendor_name: null,
-      vendor_quote_amount: null,
-      markup_pct: null,
-      sort_order: 0,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
-    const lineB: ProjectLineItem = { ...lineA, id: "line-b", quantity: 50 };
+    const company = makeCompany({ overhead_pct: 0.1, contingency_pct: 0.05 });
+    const line = makeLine({ quantity: 1, is_subcontracted: true, sub_markup_pct: 0.1 });
+    const quote = { id: "q1", vendor_name: "ABC Traffic", quote_amount: 10000 };
 
-    const recipesByBidItemId = new Map([[recipe.item.id, recipe]]);
-    const estimate = computeProjectEstimate(project, [lineA, lineB], recipesByBidItemId, rates);
-
-    const pooledBase = estimate.totalBaseCost;
-    const expectedPooledTotal = pooledBase * (1 + 0.1 + 0.08 + 0.05);
-    expect(estimate.grandTotal).toBeCloseTo(expectedPooledTotal);
+    const estimate = computeLineItemEstimate(line, recipe, company, 0.15, rates, {}, quote);
+    expect(estimate.isSubcontracted).toBe(true);
+    expect(estimate.base).toBeNull();
+    expect(estimate.rawTotal).toBeCloseTo(11000);
+    expect(estimate.preProfitTotal).toBeCloseTo(11000); // no separate profit stage for subs
+    expect(estimate.finalTotal).toBeCloseTo(11000);
   });
 
-  it("an overridden line is priced at its own rate and excluded from the shared default pool", () => {
+  it("is available on any item type, not just item_type sub_quote", () => {
     const { recipe, rates } = makeRecipe();
-    const project: Project = {
-      id: "proj-1",
-      project_name: "P",
-      client: null,
-      location: null,
-      dot_or_municipality: null,
-      bid_date: null,
-      status: "estimating",
-      default_overhead_pct: 0.1,
-      default_profit_pct: 0.08,
-      default_contingency_pct: 0.05,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
-    const normalLine: ProjectLineItem = {
-      id: "line-a",
-      project_id: "proj-1",
-      bid_item_id: "item-1",
-      quantity: 100,
-      override_overhead_pct: null,
-      override_profit_pct: null,
-      override_contingency_pct: null,
-      manual_rounded_rate: null,
-      vendor_name: null,
-      vendor_quote_amount: null,
-      markup_pct: null,
-      sort_order: 0,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
-    const overriddenLine: ProjectLineItem = {
-      ...normalLine,
+    expect(recipe.item.item_type).toBe("unit_price");
+    const company = makeCompany();
+    const line = makeLine({ is_subcontracted: true, sub_markup_pct: 0 });
+    const quote = { id: "q1", vendor_name: "V", quote_amount: 5000 };
+    const estimate = computeLineItemEstimate(line, recipe, company, 0.1, rates, {}, quote);
+    expect(estimate.isSubcontracted).toBe(true);
+    expect(estimate.rawTotal).toBeCloseTo(5000);
+  });
+});
+
+describe("computeProjectEstimate: self-performed vs subcontracted split", () => {
+  it("keeps subcontracted totals out of the pooled self-performed markup calculation", () => {
+    const { recipe, rates } = makeRecipe();
+    const company = makeCompany({ overhead_pct: 0.1, contingency_pct: 0.05 });
+
+    const selfPerformedLine = makeLine({ id: "line-self", quantity: 100 });
+    const subLine = makeLine({
+      id: "line-sub",
+      quantity: 1,
+      is_subcontracted: true,
+      sub_markup_pct: 0.1,
+    });
+
+    const recipesByBidItemId = new Map([[recipe.item.id, recipe]]);
+    const selectedQuotes = new Map([
+      ["line-sub", { id: "q1", vendor_name: "V", quote_amount: 10000 }],
+    ]);
+
+    const estimate = computeProjectEstimate(
+      [selfPerformedLine, subLine],
+      recipesByBidItemId,
+      company,
+      0.1,
+      rates,
+      new Map(),
+      selectedQuotes
+    );
+
+    const selfLine = estimate.lines.find((l) => l.lineItemId === "line-self")!;
+    const subEstimate = estimate.lines.find((l) => l.lineItemId === "line-sub")!;
+
+    // Self-performed pool reflects only the self-performed line's base cost.
+    expect(estimate.selfPerformed.totalBaseCost).toBeCloseTo(selfLine.base!.baseCost);
+    expect(estimate.selfPerformed.total).toBeCloseTo(selfLine.finalTotal);
+    expect(estimate.subcontracted.total).toBeCloseTo(subEstimate.finalTotal);
+    expect(estimate.subcontracted.total).toBeCloseTo(11000);
+
+    // Grand total is a simple sum of the two separate totals, never pooled.
+    expect(estimate.grandTotal).toBeCloseTo(estimate.selfPerformed.total + estimate.subcontracted.total);
+    expect(estimate.grandTotalPreProfit).toBeCloseTo(
+      estimate.selfPerformed.preProfitTotal + estimate.subcontracted.total
+    );
+  });
+
+  it("an overridden self-performed line is priced at its own rate and excluded from the shared default pool", () => {
+    const { recipe, rates } = makeRecipe();
+    const company = makeCompany({ overhead_pct: 0.1, contingency_pct: 0.05 });
+
+    const normalLine = makeLine({ id: "line-a", quantity: 100 });
+    const overriddenLine = makeLine({
       id: "line-b",
       quantity: 50,
       override_overhead_pct: 0.2,
-      override_profit_pct: 0.2,
       override_contingency_pct: 0,
-    };
+    });
 
     const recipesByBidItemId = new Map([[recipe.item.id, recipe]]);
     const estimate = computeProjectEstimate(
-      project,
       [normalLine, overriddenLine],
       recipesByBidItemId,
+      company,
+      0.1,
       rates
     );
 
@@ -439,41 +440,14 @@ describe("computeProjectEstimate", () => {
     expect(normalEstimate.markup.overheadPct).toBeCloseTo(0.1);
     expect(overriddenEstimate.markup.overheadPct).toBeCloseTo(0.2);
     expect(overriddenEstimate.markup.contingency).toBeCloseTo(0);
-    expect(estimate.grandTotal).toBeCloseTo(normalEstimate.finalTotal + overriddenEstimate.finalTotal);
   });
 
   it("manual_rounded_rate overrides the raw calculated total for that line", () => {
     const { recipe, rates } = makeRecipe();
-    const project: Project = {
-      id: "proj-1",
-      project_name: "P",
-      client: null,
-      location: null,
-      dot_or_municipality: null,
-      bid_date: null,
-      status: "estimating",
-      default_overhead_pct: 0.1,
-      default_profit_pct: 0,
-      default_contingency_pct: 0,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
-    const line: ProjectLineItem = {
-      id: "line-a",
-      project_id: "proj-1",
-      bid_item_id: "item-1",
-      quantity: 100,
-      override_overhead_pct: null,
-      override_profit_pct: null,
-      override_contingency_pct: null,
-      manual_rounded_rate: 50,
-      vendor_name: null,
-      vendor_quote_amount: null,
-      markup_pct: null,
-      sort_order: 0,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
+    const company = makeCompany({ overhead_pct: 0.1, contingency_pct: 0 });
+    const line = makeLine({ quantity: 100, manual_rounded_rate: 50 });
     const recipesByBidItemId = new Map([[recipe.item.id, recipe]]);
-    const estimate = computeProjectEstimate(project, [line], recipesByBidItemId, rates);
+    const estimate = computeProjectEstimate([line], recipesByBidItemId, company, 0, rates);
     expect(estimate.lines[0].finalTotal).toBeCloseTo(50 * 100);
     expect(estimate.grandTotal).toBeCloseTo(5000);
   });
