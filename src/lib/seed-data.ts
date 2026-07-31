@@ -23,6 +23,7 @@ function crew(role_name: string, hourly_rate: number, fringe: number): CrewRate 
     effective_date: sixMonthsAgo,
     is_current: true,
     created_at: new Date().toISOString(),
+    is_active: true,
   };
 }
 
@@ -34,6 +35,7 @@ function equipment(equipment_name: string, hourly_rate: number): EquipmentRate {
     effective_date: today,
     is_current: true,
     created_at: new Date().toISOString(),
+    is_active: true,
   };
 }
 
@@ -52,6 +54,7 @@ function material(
     effective_date: today,
     is_current: true,
     created_at: new Date().toISOString(),
+    is_active: true,
   };
 }
 
@@ -105,7 +108,10 @@ const beddingStone = byName(seedMaterials, "Bedding Stone (#57)");
 const rcpPipe = byName(seedMaterials, 'RCP Pipe, 15"');
 
 function recipe(
-  overrides: Omit<BidItemRecipe["item"], "id" | "created_date" | "last_used_date" | "is_saved_to_library">,
+  overrides: Omit<
+    BidItemRecipe["item"],
+    "id" | "created_date" | "last_used_date" | "is_saved_to_library" | "is_active"
+  >,
   labor: Array<{ crew_role_id: string; hours_per_unit: number; headcount: number }>,
   equipmentLines: Array<{ equipment_id: string; hours_per_unit: number }>,
   materials: Array<Omit<BidItemRecipe["materials"][number], "id" | "bid_item_id">>
@@ -118,6 +124,7 @@ function recipe(
       created_date: new Date().toISOString(),
       last_used_date: null,
       is_saved_to_library: true,
+      is_active: true,
     },
     labor: labor.map((l) => ({ id: randomUUID(), bid_item_id: item_id, ...l })),
     equipment: equipmentLines.map((e) => ({ id: randomUUID(), bid_item_id: item_id, ...e })),
