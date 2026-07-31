@@ -3,7 +3,11 @@ import { getRepository } from "@/lib/repository";
 import { BidItemSearch } from "./bid-item-search";
 
 export default async function BidItemLibraryPage() {
-  const items = await getRepository().listBidItems();
+  const repository = getRepository();
+  const [items, archivedItems] = await Promise.all([
+    repository.listBidItems(),
+    repository.listArchivedBidItems(),
+  ]);
 
   return (
     <div>
@@ -21,7 +25,7 @@ export default async function BidItemLibraryPage() {
           + New Bid Item
         </Link>
       </div>
-      <BidItemSearch items={items} />
+      <BidItemSearch items={items} archivedItems={archivedItems} />
     </div>
   );
 }
