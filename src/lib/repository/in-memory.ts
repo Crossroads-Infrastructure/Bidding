@@ -36,6 +36,7 @@ import {
 import type {
   BidItemEquipmentRowUpdate,
   BidItemMaterialRowUpdate,
+  DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
   LaborOverrideInput,
   NewBidItemEquipmentRowInput,
@@ -59,6 +60,17 @@ import type {
   Repository,
   VendorQuoteUpdate,
 } from "./types";
+
+// Builds the round-3 permanent-delete guardrail message from named reference
+// counts, e.g. "Can't permanently delete -- still referenced by 3 bid items
+// and 1 project. Archive keeps it safely out of the way instead." Returns
+// null (meaning "safe to delete") when every count is zero.
+function referenceBlockMessage(parts: Array<{ label: string; count: number }>): string | null {
+  const nonZero = parts.filter((p) => p.count > 0);
+  if (nonZero.length === 0) return null;
+  const joined = nonZero.map((p) => `${p.count} ${p.label}${p.count === 1 ? "" : "s"}`).join(" and ");
+  return `Can't permanently delete -- still referenced by ${joined}. Archive keeps it safely out of the way instead.`;
+}
 
 // Single in-process store. Re-seeded on server restart. This is intentional:
 // it exists so the app is runnable and demoable before a real Supabase
@@ -118,9 +130,50 @@ export class InMemoryRepository implements Repository {
       effective_date: input.effective_date ?? new Date().toISOString().slice(0, 10),
       is_current: true,
       created_at: new Date().toISOString(),
+      is_active: true,
     };
     store.crewRates.push(created);
     return created;
+  }
+
+  async archiveCrewRate(id: string) {
+    const rate = store.crewRates.find((r) => r.id === id);
+    if (!rate) throw new Error(`crew rate not found: ${id}`);
+    rate.is_active = false;
+    return rate;
+  }
+
+  async restoreCrewRate(id: string) {
+    const rate = store.crewRates.find((r) => r.id === id);
+    if (!rate) throw new Error(`crew rate not found: ${id}`);
+    rate.is_active = true;
+    return rate;
+  }
+
+  async deleteCrewRatePermanently(roleName: string) {
+    const ids = store.crewRates.filter((r) => r.role_name === roleName).map((r) => r.id);
+    const blockMessage = referenceBlockMessage([
+      {
+        label: "bid item",
+        count: new Set(store.bidItemLabor.filter((l) => ids.includes(l.crew_role_id)).map((l) => l.bid_item_id)).size,
+      },
+      {
+        label: "project",
+        count: new Set(
+          store.laborOverrides
+            .filter((o) => ids.includes(o.crew_role_id))
+            .map((o) => store.projectLineItems.find((li) => li.id === o.project_line_item_id)?.project_id)
+            .filter(Boolean)
+        ).size,
+      },
+      {
+        label: "crew group",
+        count: new Set(store.crewGroupMembers.filter((m) => ids.includes(m.crew_role_id)).map((m) => m.crew_group_id))
+          .size,
+      },
+    ]);
+    if (blockMessage) throw new Error(blockMessage);
+    store.crewRates = store.crewRates.filter((r) => r.role_name !== roleName);
   }
 
   async listEquipmentRates() {
@@ -142,9 +195,52 @@ export class InMemoryRepository implements Repository {
       effective_date: input.effective_date ?? new Date().toISOString().slice(0, 10),
       is_current: true,
       created_at: new Date().toISOString(),
+      is_active: true,
     };
     store.equipmentRates.push(created);
     return created;
+  }
+
+  async archiveEquipmentRate(id: string) {
+    const rate = store.equipmentRates.find((r) => r.id === id);
+    if (!rate) throw new Error(`equipment rate not found: ${id}`);
+    rate.is_active = false;
+    return rate;
+  }
+
+  async restoreEquipmentRate(id: string) {
+    const rate = store.equipmentRates.find((r) => r.id === id);
+    if (!rate) throw new Error(`equipment rate not found: ${id}`);
+    rate.is_active = true;
+    return rate;
+  }
+
+  async deleteEquipmentRatePermanently(equipmentName: string) {
+    const ids = store.equipmentRates.filter((r) => r.equipment_name === equipmentName).map((r) => r.id);
+    const blockMessage = referenceBlockMessage([
+      {
+        label: "bid item",
+        count: new Set(store.bidItemEquipment.filter((e) => ids.includes(e.equipment_id)).map((e) => e.bid_item_id))
+          .size,
+      },
+      {
+        label: "project",
+        count: new Set(
+          store.equipmentOverrides
+            .filter((o) => ids.includes(o.equipment_id))
+            .map((o) => store.projectLineItems.find((li) => li.id === o.project_line_item_id)?.project_id)
+            .filter(Boolean)
+        ).size,
+      },
+      {
+        label: "equipment group",
+        count: new Set(
+          store.equipmentGroupMembers.filter((m) => ids.includes(m.equipment_id)).map((m) => m.equipment_group_id)
+        ).size,
+      },
+    ]);
+    if (blockMessage) throw new Error(blockMessage);
+    store.equipmentRates = store.equipmentRates.filter((r) => r.equipment_name !== equipmentName);
   }
 
   async listMaterials() {
@@ -168,9 +264,46 @@ export class InMemoryRepository implements Repository {
       effective_date: input.effective_date ?? new Date().toISOString().slice(0, 10),
       is_current: true,
       created_at: new Date().toISOString(),
+      is_active: true,
     };
     store.materials.push(created);
     return created;
+  }
+
+  async archiveMaterial(id: string) {
+    const material = store.materials.find((m) => m.id === id);
+    if (!material) throw new Error(`material not found: ${id}`);
+    material.is_active = false;
+    return material;
+  }
+
+  async restoreMaterial(id: string) {
+    const material = store.materials.find((m) => m.id === id);
+    if (!material) throw new Error(`material not found: ${id}`);
+    material.is_active = true;
+    return material;
+  }
+
+  async deleteMaterialPermanently(materialName: string) {
+    const ids = store.materials.filter((m) => m.material_name === materialName).map((m) => m.id);
+    const blockMessage = referenceBlockMessage([
+      {
+        label: "bid item",
+        count: new Set(store.bidItemMaterials.filter((m) => ids.includes(m.material_id)).map((m) => m.bid_item_id))
+          .size,
+      },
+      {
+        label: "project",
+        count: new Set(
+          store.materialOverrides
+            .filter((o) => ids.includes(o.material_id))
+            .map((o) => store.projectLineItems.find((li) => li.id === o.project_line_item_id)?.project_id)
+            .filter(Boolean)
+        ).size,
+      },
+    ]);
+    if (blockMessage) throw new Error(blockMessage);
+    store.materials = store.materials.filter((m) => m.material_name !== materialName);
   }
 
   async getCurrentCompanyDefaults() {
@@ -289,13 +422,51 @@ export class InMemoryRepository implements Repository {
 
   async listBidItems() {
     return store.bidItems
-      .filter((i) => i.is_saved_to_library)
+      .filter((i) => i.is_saved_to_library && i.is_active)
       .sort((a, b) => a.item_name.localeCompare(b.item_name));
+  }
+
+  async listArchivedBidItems() {
+    return store.bidItems
+      .filter((i) => i.is_saved_to_library && !i.is_active)
+      .sort((a, b) => a.item_name.localeCompare(b.item_name));
+  }
+
+  async archiveBidItem(id: string) {
+    const item = store.bidItems.find((i) => i.id === id);
+    if (!item) throw new Error(`bid item not found: ${id}`);
+    item.is_active = false;
+    return item;
+  }
+
+  async restoreBidItem(id: string) {
+    const item = store.bidItems.find((i) => i.id === id);
+    if (!item) throw new Error(`bid item not found: ${id}`);
+    item.is_active = true;
+    return item;
+  }
+
+  async deleteBidItemPermanently(id: string) {
+    const blockMessage = referenceBlockMessage([
+      {
+        label: "project",
+        count: new Set(store.projectLineItems.filter((li) => li.bid_item_id === id).map((li) => li.project_id)).size,
+      },
+      {
+        label: "historical bid record",
+        count: store.bidHistory.filter((h) => h.bid_item_id === id).length,
+      },
+    ]);
+    if (blockMessage) throw new Error(blockMessage);
+    store.bidItems = store.bidItems.filter((i) => i.id !== id);
+    store.bidItemLabor = store.bidItemLabor.filter((l) => l.bid_item_id !== id);
+    store.bidItemEquipment = store.bidItemEquipment.filter((e) => e.bid_item_id !== id);
+    store.bidItemMaterials = store.bidItemMaterials.filter((m) => m.bid_item_id !== id);
   }
 
   async searchBidItems(query: string) {
     const q = query.trim().toLowerCase();
-    const saved = store.bidItems.filter((i) => i.is_saved_to_library);
+    const saved = store.bidItems.filter((i) => i.is_saved_to_library && i.is_active);
     if (!q) return saved;
     return saved.filter(
       (i) =>
@@ -330,6 +501,7 @@ export class InMemoryRepository implements Repository {
       created_date: new Date().toISOString(),
       last_used_date: null,
       is_saved_to_library: input.is_saved_to_library ?? true,
+      is_active: true,
     };
     store.bidItems.push(item);
 
@@ -441,6 +613,12 @@ export class InMemoryRepository implements Repository {
   }
 
   async createProject(input: NewProjectInput) {
+    // Round 4 #1: profit is no longer collected on the New Project form --
+    // new projects silently inherit the most recently used profit % (site
+    // wide, single-tenant), editable only on the Review screen.
+    const lastUsedProfitPct = [...store.projects].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]?.default_profit_pct;
     const created: Project = {
       id: randomUUID(),
       project_name: input.project_name,
@@ -449,11 +627,87 @@ export class InMemoryRepository implements Repository {
       dot_or_municipality: input.dot_or_municipality ?? null,
       bid_date: input.bid_date ?? null,
       status: "estimating",
-      default_profit_pct: input.default_profit_pct ?? 0,
+      default_profit_pct: input.default_profit_pct ?? lastUsedProfitPct ?? 0,
       created_at: new Date().toISOString(),
     };
     store.projects.push(created);
     return created;
+  }
+
+  // Round 4 #2: rebuilds a new project from an existing one's line-item
+  // structure and customization choices, but never its stale pricing --
+  // manual rounded rates, vendor quotes, and item #/name overrides all
+  // reset, and every line recalculates off today's current rates because
+  // the calc engine always resolves rates by name at read time (see
+  // RateContext), never off a frozen snapshot.
+  async duplicateProject(sourceProjectId: string, details: DuplicateProjectDetailsInput) {
+    const source = store.projects.find((p) => p.id === sourceProjectId);
+    if (!source) throw new Error(`project not found: ${sourceProjectId}`);
+
+    const newProject = await this.createProject({
+      project_name: details.project_name,
+      client: details.client,
+      location: details.location,
+      dot_or_municipality: details.dot_or_municipality,
+      bid_date: details.bid_date,
+    });
+
+    const sourceLines = store.projectLineItems
+      .filter((li) => li.project_id === sourceProjectId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    for (const sourceLine of sourceLines) {
+      const newLine: ProjectLineItem = {
+        id: randomUUID(),
+        project_id: newProject.id,
+        bid_item_id: sourceLine.bid_item_id,
+        quantity: sourceLine.quantity,
+        override_overhead_pct: sourceLine.override_overhead_pct,
+        override_profit_pct: null, // profit is always decided fresh at Review
+        override_contingency_pct: sourceLine.override_contingency_pct,
+        manual_rounded_rate: null,
+        sort_order: sourceLine.sort_order,
+        created_at: new Date().toISOString(),
+        notes_override: sourceLine.notes_override,
+        item_number_override: null,
+        item_name_override: null,
+        is_subcontracted: sourceLine.is_subcontracted,
+        sub_markup_pct: sourceLine.sub_markup_pct,
+      };
+      store.projectLineItems.push(newLine);
+
+      for (const o of store.materialOverrides.filter((o) => o.project_line_item_id === sourceLine.id)) {
+        store.materialOverrides.push({
+          id: randomUUID(),
+          project_line_item_id: newLine.id,
+          material_id: o.material_id,
+          override_rate: o.override_rate,
+          override_qty: o.override_qty,
+        });
+      }
+      for (const o of store.laborOverrides.filter((o) => o.project_line_item_id === sourceLine.id)) {
+        store.laborOverrides.push({
+          id: randomUUID(),
+          project_line_item_id: newLine.id,
+          crew_role_id: o.crew_role_id,
+          override_hours: o.override_hours,
+          override_headcount: o.override_headcount,
+        });
+      }
+      for (const o of store.equipmentOverrides.filter((o) => o.project_line_item_id === sourceLine.id)) {
+        store.equipmentOverrides.push({
+          id: randomUUID(),
+          project_line_item_id: newLine.id,
+          equipment_id: o.equipment_id,
+          override_hours: o.override_hours,
+        });
+      }
+      // Vendor quotes are intentionally NOT copied -- a duplicated
+      // subcontracted line keeps is_subcontracted + sub_markup_pct but
+      // needs a fresh quote.
+    }
+
+    return newProject;
   }
 
   async updateProjectStatus(projectId: string, status: Project["status"]) {
