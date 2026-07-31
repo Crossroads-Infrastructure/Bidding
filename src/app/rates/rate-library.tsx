@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type {
   CompanyDefaults,
@@ -19,12 +20,21 @@ import {
   addEquipmentGroupMemberAction,
   addEquipmentRateAction,
   addMaterialAction,
+  archiveCrewRateAction,
+  archiveEquipmentRateAction,
+  archiveMaterialAction,
   createCrewGroupAction,
   createEquipmentGroupAction,
   deleteCrewGroupAction,
+  deleteCrewRatePermanentlyAction,
   deleteEquipmentGroupAction,
+  deleteEquipmentRatePermanentlyAction,
+  deleteMaterialPermanentlyAction,
   removeCrewGroupMemberAction,
   removeEquipmentGroupMemberAction,
+  restoreCrewRateAction,
+  restoreEquipmentRateAction,
+  restoreMaterialAction,
   updateCrewGroupMemberAction,
 } from "../actions";
 
@@ -98,6 +108,111 @@ function StaleBadge({ effectiveDate }: { effectiveDate: string }) {
     <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300">
       stale · updated {effectiveDate}
     </span>
+  );
+}
+
+// Round 3: shared "Active / Archived" switch used by the Crew, Equipment,
+// Materials, and Bid Item library views.
+function ArchiveViewToggle({
+  view,
+  onChange,
+  archivedCount,
+}: {
+  view: "active" | "archived";
+  onChange: (v: "active" | "archived") => void;
+  archivedCount: number;
+}) {
+  return (
+    <div className="mb-3 flex gap-1 text-xs">
+      {(["active", "archived"] as const).map((v) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={`rounded-full px-3 py-1 font-medium capitalize ${
+            view === v
+              ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+              : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+          }`}
+        >
+          {v === "archived" ? `Archived (${archivedCount})` : "Active"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Round 3: generic "Archived" list -- Restore or Delete Permanently, with
+// the permanent-delete reference-check guardrail's error surfaced inline.
+function ArchivedTable<T>({
+  rows,
+  columns,
+  onRestore,
+  onDelete,
+  rowKey,
+}: {
+  rows: T[];
+  columns: (row: T) => string[];
+  onRestore: (row: T) => Promise<unknown>;
+  onDelete: (row: T) => Promise<void>;
+  rowKey: (row: T) => string;
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      {error && (
+        <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+          {error}
+        </p>
+      )}
+      <table className="w-full text-sm">
+        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          {rows.map((row) => (
+            <tr key={rowKey(row)}>
+              {columns(row).map((c, i) => (
+                <td key={i} className="px-4 py-2">
+                  {c}
+                </td>
+              ))}
+              <td className="px-4 py-2 text-right whitespace-nowrap">
+                <button
+                  onClick={async () => {
+                    await onRestore(row);
+                    router.refresh();
+                  }}
+                  className="mr-3 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  Restore
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm("Permanently delete this? This cannot be undone.")) return;
+                    setError(null);
+                    try {
+                      await onDelete(row);
+                      router.refresh();
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : String(e));
+                    }
+                  }}
+                  className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+                >
+                  Delete Permanently
+                </button>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={99} className="px-4 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                Nothing archived.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -182,59 +297,86 @@ function CompanyDefaultsCard({ companyDefaults }: { companyDefaults: CompanyDefa
 }
 
 function CrewTab({ rates }: { rates: CrewRate[] }) {
+  const router = useRouter();
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [view, setView] = useState<"active" | "archived">("active");
+
+  const activeRates = rates.filter((r) => r.is_active);
+  const archivedRates = rates.filter((r) => !r.is_active);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
-          <tr>
-            <th className="px-4 py-2 font-medium">Role</th>
-            <th className="px-4 py-2 font-medium">Hourly rate</th>
-            <th className="px-4 py-2 font-medium">Fringe</th>
-            <th className="px-4 py-2 font-medium">Effective</th>
-            <th className="px-4 py-2" />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {rates.map((r) =>
-            editing === r.id ? (
-              <CrewEditRow key={r.id} rate={r} onDone={() => setEditing(null)} />
-            ) : (
-              <tr key={r.id}>
-                <td className="px-4 py-2 font-medium">{r.role_name}</td>
-                <td className="px-4 py-2">${r.hourly_rate.toFixed(2)}</td>
-                <td className="px-4 py-2">${r.fringe.toFixed(2)}</td>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
-                  {r.effective_date}
-                  <StaleBadge effectiveDate={r.effective_date} />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    onClick={() => setEditing(r.id)}
-                    className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Update rate
-                  </button>
-                </td>
+    <div>
+      <ArchiveViewToggle view={view} onChange={setView} archivedCount={archivedRates.length} />
+      {view === "active" ? (
+        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
+              <tr>
+                <th className="px-4 py-2 font-medium">Role</th>
+                <th className="px-4 py-2 font-medium">Hourly rate</th>
+                <th className="px-4 py-2 font-medium">Fringe</th>
+                <th className="px-4 py-2 font-medium">Effective</th>
+                <th className="px-4 py-2" />
               </tr>
-            )
-          )}
-        </tbody>
-      </table>
-      <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-        {adding ? (
-          <CrewAddRow onDone={() => setAdding(false)} />
-        ) : (
-          <button
-            onClick={() => setAdding(true)}
-            className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
-          >
-            + Add crew role
-          </button>
-        )}
-      </div>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {activeRates.map((r) =>
+                editing === r.id ? (
+                  <CrewEditRow key={r.id} rate={r} onDone={() => setEditing(null)} />
+                ) : (
+                  <tr key={r.id}>
+                    <td className="px-4 py-2 font-medium">{r.role_name}</td>
+                    <td className="px-4 py-2">${r.hourly_rate.toFixed(2)}</td>
+                    <td className="px-4 py-2">${r.fringe.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
+                      {r.effective_date}
+                      <StaleBadge effectiveDate={r.effective_date} />
+                    </td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => setEditing(r.id)}
+                        className="mr-3 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                      >
+                        Update rate
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await archiveCrewRateAction(r.id);
+                          router.refresh();
+                        }}
+                        className="text-xs font-medium text-zinc-500 hover:underline dark:text-zinc-400"
+                      >
+                        Archive
+                      </button>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+          <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+            {adding ? (
+              <CrewAddRow onDone={() => setAdding(false)} />
+            ) : (
+              <button
+                onClick={() => setAdding(true)}
+                className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+              >
+                + Add crew role
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <ArchivedTable
+          rows={archivedRates}
+          columns={(r) => [r.role_name, `$${r.hourly_rate.toFixed(2)}/hr`]}
+          onRestore={(r) => restoreCrewRateAction(r.id)}
+          onDelete={(r) => deleteCrewRatePermanentlyAction(r.role_name)}
+          rowKey={(r) => r.id}
+        />
+      )}
     </div>
   );
 }
@@ -347,60 +489,87 @@ function CrewAddRow({ onDone }: { onDone: () => void }) {
 }
 
 function EquipmentTab({ rates }: { rates: EquipmentRate[] }) {
+  const router = useRouter();
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [view, setView] = useState<"active" | "archived">("active");
+
+  const activeRates = rates.filter((r) => r.is_active);
+  const archivedRates = rates.filter((r) => !r.is_active);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
-          <tr>
-            <th className="px-4 py-2 font-medium">Equipment</th>
-            <th className="px-4 py-2 font-medium">Hourly rate</th>
-            <th className="px-4 py-2 font-medium">Effective</th>
-            <th className="px-4 py-2" />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {rates.map((r) =>
-            editing === r.id ? (
-              <tr key={r.id}>
-                <td className="px-4 py-2 font-medium">{r.equipment_name}</td>
-                <EquipmentEditCells rate={r} onDone={() => setEditing(null)} />
+    <div>
+      <ArchiveViewToggle view={view} onChange={setView} archivedCount={archivedRates.length} />
+      {view === "active" ? (
+        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
+              <tr>
+                <th className="px-4 py-2 font-medium">Equipment</th>
+                <th className="px-4 py-2 font-medium">Hourly rate</th>
+                <th className="px-4 py-2 font-medium">Effective</th>
+                <th className="px-4 py-2" />
               </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {activeRates.map((r) =>
+                editing === r.id ? (
+                  <tr key={r.id}>
+                    <td className="px-4 py-2 font-medium">{r.equipment_name}</td>
+                    <EquipmentEditCells rate={r} onDone={() => setEditing(null)} />
+                  </tr>
+                ) : (
+                  <tr key={r.id}>
+                    <td className="px-4 py-2 font-medium">{r.equipment_name}</td>
+                    <td className="px-4 py-2">${r.hourly_rate.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
+                      {r.effective_date}
+                      <StaleBadge effectiveDate={r.effective_date} />
+                    </td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => setEditing(r.id)}
+                        className="mr-3 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                      >
+                        Update rate
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await archiveEquipmentRateAction(r.id);
+                          router.refresh();
+                        }}
+                        className="text-xs font-medium text-zinc-500 hover:underline dark:text-zinc-400"
+                      >
+                        Archive
+                      </button>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+          <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+            {adding ? (
+              <EquipmentAddRow onDone={() => setAdding(false)} />
             ) : (
-              <tr key={r.id}>
-                <td className="px-4 py-2 font-medium">{r.equipment_name}</td>
-                <td className="px-4 py-2">${r.hourly_rate.toFixed(2)}</td>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
-                  {r.effective_date}
-                  <StaleBadge effectiveDate={r.effective_date} />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    onClick={() => setEditing(r.id)}
-                    className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Update rate
-                  </button>
-                </td>
-              </tr>
-            )
-          )}
-        </tbody>
-      </table>
-      <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-        {adding ? (
-          <EquipmentAddRow onDone={() => setAdding(false)} />
-        ) : (
-          <button
-            onClick={() => setAdding(true)}
-            className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
-          >
-            + Add equipment
-          </button>
-        )}
-      </div>
+              <button
+                onClick={() => setAdding(true)}
+                className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+              >
+                + Add equipment
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <ArchivedTable
+          rows={archivedRates}
+          columns={(r) => [r.equipment_name, `$${r.hourly_rate.toFixed(2)}/hr`]}
+          onRestore={(r) => restoreEquipmentRateAction(r.id)}
+          onDelete={(r) => deleteEquipmentRatePermanentlyAction(r.equipment_name)}
+          rowKey={(r) => r.id}
+        />
+      )}
     </div>
   );
 }
@@ -486,65 +655,92 @@ function EquipmentAddRow({ onDone }: { onDone: () => void }) {
 }
 
 function MaterialsTab({ materials }: { materials: Material[] }) {
+  const router = useRouter();
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [view, setView] = useState<"active" | "archived">("active");
+
+  const activeMaterials = materials.filter((m) => m.is_active);
+  const archivedMaterials = materials.filter((m) => !m.is_active);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
-          <tr>
-            <th className="px-4 py-2 font-medium">Material</th>
-            <th className="px-4 py-2 font-medium">Unit</th>
-            <th className="px-4 py-2 font-medium">Rate</th>
-            <th className="px-4 py-2 font-medium">Vendor</th>
-            <th className="px-4 py-2 font-medium">Effective</th>
-            <th className="px-4 py-2" />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {materials.map((m) =>
-            editing === m.id ? (
-              <tr key={m.id}>
-                <td className="px-4 py-2 font-medium">{m.material_name}</td>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{m.unit}</td>
-                <MaterialEditCells material={m} onDone={() => setEditing(null)} />
+    <div>
+      <ArchiveViewToggle view={view} onChange={setView} archivedCount={archivedMaterials.length} />
+      {view === "active" ? (
+        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
+              <tr>
+                <th className="px-4 py-2 font-medium">Material</th>
+                <th className="px-4 py-2 font-medium">Unit</th>
+                <th className="px-4 py-2 font-medium">Rate</th>
+                <th className="px-4 py-2 font-medium">Vendor</th>
+                <th className="px-4 py-2 font-medium">Effective</th>
+                <th className="px-4 py-2" />
               </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {activeMaterials.map((m) =>
+                editing === m.id ? (
+                  <tr key={m.id}>
+                    <td className="px-4 py-2 font-medium">{m.material_name}</td>
+                    <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{m.unit}</td>
+                    <MaterialEditCells material={m} onDone={() => setEditing(null)} />
+                  </tr>
+                ) : (
+                  <tr key={m.id}>
+                    <td className="px-4 py-2 font-medium">{m.material_name}</td>
+                    <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{m.unit}</td>
+                    <td className="px-4 py-2">${m.rate.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{m.vendor ?? "—"}</td>
+                    <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
+                      {m.effective_date}
+                      <StaleBadge effectiveDate={m.effective_date} />
+                    </td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => setEditing(m.id)}
+                        className="mr-3 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                      >
+                        Update rate
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await archiveMaterialAction(m.id);
+                          router.refresh();
+                        }}
+                        className="text-xs font-medium text-zinc-500 hover:underline dark:text-zinc-400"
+                      >
+                        Archive
+                      </button>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+          <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+            {adding ? (
+              <MaterialAddRow onDone={() => setAdding(false)} />
             ) : (
-              <tr key={m.id}>
-                <td className="px-4 py-2 font-medium">{m.material_name}</td>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{m.unit}</td>
-                <td className="px-4 py-2">${m.rate.toFixed(2)}</td>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{m.vendor ?? "—"}</td>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
-                  {m.effective_date}
-                  <StaleBadge effectiveDate={m.effective_date} />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    onClick={() => setEditing(m.id)}
-                    className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Update rate
-                  </button>
-                </td>
-              </tr>
-            )
-          )}
-        </tbody>
-      </table>
-      <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-        {adding ? (
-          <MaterialAddRow onDone={() => setAdding(false)} />
-        ) : (
-          <button
-            onClick={() => setAdding(true)}
-            className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
-          >
-            + Add material
-          </button>
-        )}
-      </div>
+              <button
+                onClick={() => setAdding(true)}
+                className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+              >
+                + Add material
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <ArchivedTable
+          rows={archivedMaterials}
+          columns={(m) => [m.material_name, m.unit, `$${m.rate.toFixed(2)}`]}
+          onRestore={(m) => restoreMaterialAction(m.id)}
+          onDelete={(m) => deleteMaterialPermanentlyAction(m.material_name)}
+          rowKey={(m) => m.id}
+        />
+      )}
     </div>
   );
 }
