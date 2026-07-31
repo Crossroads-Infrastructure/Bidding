@@ -129,6 +129,7 @@ describe("RateContext (rate fluidity)", () => {
       fringe: 12,
       effective_date: "2024-01-01",
       is_current: false,
+      is_active: true,
       created_at: "2024-01-01T00:00:00.000Z",
     };
     const newRow: CrewRate = {
@@ -138,6 +139,7 @@ describe("RateContext (rate fluidity)", () => {
       fringe: 14,
       effective_date: "2026-01-01",
       is_current: true,
+      is_active: true,
       created_at: "2026-01-01T00:00:00.000Z",
     };
     const rates = new RateContext([oldRow, newRow], [], []);
@@ -158,6 +160,7 @@ function makeRecipe(): { recipe: BidItemRecipe; rates: RateContext } {
     fringe: 10,
     effective_date: "2026-01-01",
     is_current: true,
+    is_active: true,
     created_at: "2026-01-01T00:00:00.000Z",
   };
   const equip: EquipmentRate = {
@@ -166,6 +169,7 @@ function makeRecipe(): { recipe: BidItemRecipe; rates: RateContext } {
     hourly_rate: 80,
     effective_date: "2026-01-01",
     is_current: true,
+    is_active: true,
     created_at: "2026-01-01T00:00:00.000Z",
   };
   const material: Material = {
@@ -176,6 +180,7 @@ function makeRecipe(): { recipe: BidItemRecipe; rates: RateContext } {
     vendor: null,
     effective_date: "2026-01-01",
     is_current: true,
+    is_active: true,
     created_at: "2026-01-01T00:00:00.000Z",
   };
   const item: BidItem = {
@@ -191,6 +196,7 @@ function makeRecipe(): { recipe: BidItemRecipe; rates: RateContext } {
     created_date: "2026-01-01T00:00:00.000Z",
     last_used_date: null,
     is_saved_to_library: true,
+    is_active: true,
   };
   const recipe: BidItemRecipe = {
     item,
@@ -295,6 +301,7 @@ describe("markup override hierarchy", () => {
     created_date: "2026-01-01T00:00:00.000Z",
     last_used_date: null,
     is_saved_to_library: true,
+    is_active: true,
   };
   const line = makeLine();
 
