@@ -25,6 +25,7 @@ import type {
   BidItemEquipmentRowUpdate,
   BidItemLaborRowUpdate,
   BidItemMaterialRowUpdate,
+  DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
   LaborOverrideInput,
   NewBidItemEquipmentRowInput,
@@ -54,6 +55,20 @@ function unwrap<T>({ data, error }: { data: T | null; error: { message: string }
   if (error) throw new Error(error.message);
   if (data === null) throw new Error("supabase query returned no data");
   return data;
+}
+
+// Mirrors in-memory.ts's referenceBlockMessage: builds the round-3
+// permanent-delete guardrail message from named reference counts. Returns
+// null (safe to delete) when every count is zero.
+function referenceBlockMessage(parts: Array<{ label: string; count: number }>): string | null {
+  const nonZero = parts.filter((p) => p.count > 0);
+  if (nonZero.length === 0) return null;
+  const joined = nonZero.map((p) => `${p.count} ${p.label}${p.count === 1 ? "" : "s"}`).join(" and ");
+  return `Can't permanently delete -- still referenced by ${joined}. Archive keeps it safely out of the way instead.`;
+}
+
+function distinctCount<T>(values: Array<T | null | undefined>): number {
+  return new Set(values.filter((v): v is T => v != null)).size;
 }
 
 export class SupabaseRepository implements Repository {
@@ -91,6 +106,55 @@ export class SupabaseRepository implements Repository {
     );
   }
 
+  async archiveCrewRate(id: string) {
+    return unwrap<CrewRate>(
+      await this.client.from("crew_rates").update({ is_active: false }).eq("id", id).select().single()
+    );
+  }
+
+  async restoreCrewRate(id: string) {
+    return unwrap<CrewRate>(
+      await this.client.from("crew_rates").update({ is_active: true }).eq("id", id).select().single()
+    );
+  }
+
+  async deleteCrewRatePermanently(roleName: string) {
+    const rows = unwrap<Pick<CrewRate, "id">[]>(
+      await this.client.from("crew_rates").select("id").eq("role_name", roleName)
+    );
+    const ids = rows.map((r) => r.id);
+    const [labor, overrides, groupMembers] = await Promise.all([
+      unwrap<{ bid_item_id: string }[]>(
+        await this.client.from("bid_item_labor").select("bid_item_id").in("crew_role_id", ids)
+      ),
+      unwrap<{ project_line_item_id: string }[]>(
+        await this.client
+          .from("project_line_item_labor_overrides")
+          .select("project_line_item_id")
+          .in("crew_role_id", ids)
+      ),
+      unwrap<{ crew_group_id: string }[]>(
+        await this.client.from("crew_group_members").select("crew_group_id").in("crew_role_id", ids)
+      ),
+    ]);
+    const overrideLineIds = overrides.map((o) => o.project_line_item_id);
+    const overrideProjectIds = overrideLineIds.length
+      ? unwrap<{ project_id: string }[]>(
+          await this.client.from("project_line_items").select("project_id").in("id", overrideLineIds)
+        )
+      : [];
+
+    const blockMessage = referenceBlockMessage([
+      { label: "bid item", count: distinctCount(labor.map((l) => l.bid_item_id)) },
+      { label: "project", count: distinctCount(overrideProjectIds.map((p) => p.project_id)) },
+      { label: "crew group", count: distinctCount(groupMembers.map((m) => m.crew_group_id)) },
+    ]);
+    if (blockMessage) throw new Error(blockMessage);
+
+    const { error } = await this.client.from("crew_rates").delete().eq("role_name", roleName);
+    if (error) throw new Error(error.message);
+  }
+
   async listEquipmentRates() {
     return unwrap<EquipmentRate[]>(await this.client.from("equipment_rates").select("*").order("equipment_name"));
   }
@@ -123,6 +187,55 @@ export class SupabaseRepository implements Repository {
     );
   }
 
+  async archiveEquipmentRate(id: string) {
+    return unwrap<EquipmentRate>(
+      await this.client.from("equipment_rates").update({ is_active: false }).eq("id", id).select().single()
+    );
+  }
+
+  async restoreEquipmentRate(id: string) {
+    return unwrap<EquipmentRate>(
+      await this.client.from("equipment_rates").update({ is_active: true }).eq("id", id).select().single()
+    );
+  }
+
+  async deleteEquipmentRatePermanently(equipmentName: string) {
+    const rows = unwrap<Pick<EquipmentRate, "id">[]>(
+      await this.client.from("equipment_rates").select("id").eq("equipment_name", equipmentName)
+    );
+    const ids = rows.map((r) => r.id);
+    const [equipment, overrides, groupMembers] = await Promise.all([
+      unwrap<{ bid_item_id: string }[]>(
+        await this.client.from("bid_item_equipment").select("bid_item_id").in("equipment_id", ids)
+      ),
+      unwrap<{ project_line_item_id: string }[]>(
+        await this.client
+          .from("project_line_item_equipment_overrides")
+          .select("project_line_item_id")
+          .in("equipment_id", ids)
+      ),
+      unwrap<{ equipment_group_id: string }[]>(
+        await this.client.from("equipment_group_members").select("equipment_group_id").in("equipment_id", ids)
+      ),
+    ]);
+    const overrideLineIds = overrides.map((o) => o.project_line_item_id);
+    const overrideProjectIds = overrideLineIds.length
+      ? unwrap<{ project_id: string }[]>(
+          await this.client.from("project_line_items").select("project_id").in("id", overrideLineIds)
+        )
+      : [];
+
+    const blockMessage = referenceBlockMessage([
+      { label: "bid item", count: distinctCount(equipment.map((e) => e.bid_item_id)) },
+      { label: "project", count: distinctCount(overrideProjectIds.map((p) => p.project_id)) },
+      { label: "equipment group", count: distinctCount(groupMembers.map((m) => m.equipment_group_id)) },
+    ]);
+    if (blockMessage) throw new Error(blockMessage);
+
+    const { error } = await this.client.from("equipment_rates").delete().eq("equipment_name", equipmentName);
+    if (error) throw new Error(error.message);
+  }
+
   async listMaterials() {
     return unwrap<Material[]>(await this.client.from("materials").select("*").order("material_name"));
   }
@@ -149,6 +262,51 @@ export class SupabaseRepository implements Repository {
     return unwrap<Material>(
       await this.client.from("materials").insert({ ...input, is_current: true }).select().single()
     );
+  }
+
+  async archiveMaterial(id: string) {
+    return unwrap<Material>(
+      await this.client.from("materials").update({ is_active: false }).eq("id", id).select().single()
+    );
+  }
+
+  async restoreMaterial(id: string) {
+    return unwrap<Material>(
+      await this.client.from("materials").update({ is_active: true }).eq("id", id).select().single()
+    );
+  }
+
+  async deleteMaterialPermanently(materialName: string) {
+    const rows = unwrap<Pick<Material, "id">[]>(
+      await this.client.from("materials").select("id").eq("material_name", materialName)
+    );
+    const ids = rows.map((r) => r.id);
+    const [materials, overrides] = await Promise.all([
+      unwrap<{ bid_item_id: string }[]>(
+        await this.client.from("bid_item_materials").select("bid_item_id").in("material_id", ids)
+      ),
+      unwrap<{ project_line_item_id: string }[]>(
+        await this.client
+          .from("project_line_item_material_overrides")
+          .select("project_line_item_id")
+          .in("material_id", ids)
+      ),
+    ]);
+    const overrideLineIds = overrides.map((o) => o.project_line_item_id);
+    const overrideProjectIds = overrideLineIds.length
+      ? unwrap<{ project_id: string }[]>(
+          await this.client.from("project_line_items").select("project_id").in("id", overrideLineIds)
+        )
+      : [];
+
+    const blockMessage = referenceBlockMessage([
+      { label: "bid item", count: distinctCount(materials.map((m) => m.bid_item_id)) },
+      { label: "project", count: distinctCount(overrideProjectIds.map((p) => p.project_id)) },
+    ]);
+    if (blockMessage) throw new Error(blockMessage);
+
+    const { error } = await this.client.from("materials").delete().eq("material_name", materialName);
+    if (error) throw new Error(error.message);
   }
 
   async getCurrentCompanyDefaults() {
@@ -276,8 +434,53 @@ export class SupabaseRepository implements Repository {
 
   async listBidItems() {
     return unwrap<BidItem[]>(
-      await this.client.from("bid_items").select("*").eq("is_saved_to_library", true).order("item_name")
+      await this.client
+        .from("bid_items")
+        .select("*")
+        .eq("is_saved_to_library", true)
+        .eq("is_active", true)
+        .order("item_name")
     );
+  }
+
+  async listArchivedBidItems() {
+    return unwrap<BidItem[]>(
+      await this.client
+        .from("bid_items")
+        .select("*")
+        .eq("is_saved_to_library", true)
+        .eq("is_active", false)
+        .order("item_name")
+    );
+  }
+
+  async archiveBidItem(id: string) {
+    return unwrap<BidItem>(
+      await this.client.from("bid_items").update({ is_active: false }).eq("id", id).select().single()
+    );
+  }
+
+  async restoreBidItem(id: string) {
+    return unwrap<BidItem>(
+      await this.client.from("bid_items").update({ is_active: true }).eq("id", id).select().single()
+    );
+  }
+
+  async deleteBidItemPermanently(id: string) {
+    const [lineItems, history] = await Promise.all([
+      unwrap<{ project_id: string }[]>(
+        await this.client.from("project_line_items").select("project_id").eq("bid_item_id", id)
+      ),
+      unwrap<{ id: string }[]>(await this.client.from("bid_history").select("id").eq("bid_item_id", id)),
+    ]);
+    const blockMessage = referenceBlockMessage([
+      { label: "project", count: distinctCount(lineItems.map((li) => li.project_id)) },
+      { label: "historical bid record", count: history.length },
+    ]);
+    if (blockMessage) throw new Error(blockMessage);
+
+    const { error } = await this.client.from("bid_items").delete().eq("id", id);
+    if (error) throw new Error(error.message);
   }
 
   async searchBidItems(query: string) {
@@ -288,6 +491,7 @@ export class SupabaseRepository implements Repository {
         .from("bid_items")
         .select("*")
         .eq("is_saved_to_library", true)
+        .eq("is_active", true)
         .or(`item_name.ilike.%${q}%,description.ilike.%${q}%`)
         .order("item_name")
     );
@@ -481,13 +685,131 @@ export class SupabaseRepository implements Repository {
   }
 
   async createProject(input: NewProjectInput) {
+    let defaultProfitPct = input.default_profit_pct;
+    if (defaultProfitPct === undefined) {
+      // Round 4 #1: profit is no longer collected on the New Project form --
+      // new projects silently inherit the most recently used profit %,
+      // editable only on the Review screen.
+      const { data: lastProject } = await this.client
+        .from("projects")
+        .select("default_profit_pct")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      defaultProfitPct = lastProject?.default_profit_pct ?? 0;
+    }
     return unwrap<Project>(
       await this.client
         .from("projects")
-        .insert({ ...input, default_profit_pct: input.default_profit_pct ?? 0, status: "estimating" })
+        .insert({ ...input, default_profit_pct: defaultProfitPct, status: "estimating" })
         .select()
         .single()
     );
+  }
+
+  // Round 4 #2: rebuilds a new project from an existing one's line-item
+  // structure and customization choices, but never its stale pricing --
+  // manual rounded rates, vendor quotes, and item #/name overrides all
+  // reset, and every line recalculates off today's current rates because
+  // the calc engine always resolves rates by name at read time, never off
+  // a frozen snapshot.
+  async duplicateProject(sourceProjectId: string, details: DuplicateProjectDetailsInput) {
+    const source = await this.getProject(sourceProjectId);
+    if (!source) throw new Error(`project not found: ${sourceProjectId}`);
+
+    const newProject = await this.createProject({
+      project_name: details.project_name,
+      client: details.client,
+      location: details.location,
+      dot_or_municipality: details.dot_or_municipality,
+      bid_date: details.bid_date,
+    });
+
+    const sourceLines = unwrap<ProjectLineItem[]>(
+      await this.client
+        .from("project_line_items")
+        .select("*")
+        .eq("project_id", sourceProjectId)
+        .order("sort_order")
+    );
+
+    for (const sourceLine of sourceLines) {
+      const newLine = unwrap<ProjectLineItem>(
+        await this.client
+          .from("project_line_items")
+          .insert({
+            project_id: newProject.id,
+            bid_item_id: sourceLine.bid_item_id,
+            quantity: sourceLine.quantity,
+            override_overhead_pct: sourceLine.override_overhead_pct,
+            override_profit_pct: null,
+            override_contingency_pct: sourceLine.override_contingency_pct,
+            manual_rounded_rate: null,
+            sort_order: sourceLine.sort_order,
+            notes_override: sourceLine.notes_override,
+            item_number_override: null,
+            item_name_override: null,
+            is_subcontracted: sourceLine.is_subcontracted,
+            sub_markup_pct: sourceLine.sub_markup_pct,
+          })
+          .select()
+          .single()
+      );
+
+      const [materialOverrides, laborOverrides, equipmentOverrides] = await Promise.all([
+        unwrap<ProjectLineItemMaterialOverride[]>(
+          await this.client
+            .from("project_line_item_material_overrides")
+            .select("*")
+            .eq("project_line_item_id", sourceLine.id)
+        ),
+        unwrap<ProjectLineItemLaborOverride[]>(
+          await this.client
+            .from("project_line_item_labor_overrides")
+            .select("*")
+            .eq("project_line_item_id", sourceLine.id)
+        ),
+        unwrap<ProjectLineItemEquipmentOverride[]>(
+          await this.client
+            .from("project_line_item_equipment_overrides")
+            .select("*")
+            .eq("project_line_item_id", sourceLine.id)
+        ),
+      ]);
+
+      if (materialOverrides.length) {
+        await this.client.from("project_line_item_material_overrides").insert(
+          materialOverrides.map((o) => ({
+            project_line_item_id: newLine.id,
+            material_id: o.material_id,
+            override_rate: o.override_rate,
+            override_qty: o.override_qty,
+          }))
+        );
+      }
+      if (laborOverrides.length) {
+        await this.client.from("project_line_item_labor_overrides").insert(
+          laborOverrides.map((o) => ({
+            project_line_item_id: newLine.id,
+            crew_role_id: o.crew_role_id,
+            override_hours: o.override_hours,
+            override_headcount: o.override_headcount,
+          }))
+        );
+      }
+      if (equipmentOverrides.length) {
+        await this.client.from("project_line_item_equipment_overrides").insert(
+          equipmentOverrides.map((o) => ({
+            project_line_item_id: newLine.id,
+            equipment_id: o.equipment_id,
+            override_hours: o.override_hours,
+          }))
+        );
+      }
+      // Vendor quotes are intentionally NOT copied.
+    }
+
+    return newProject;
   }
 
   async updateProjectStatus(projectId: string, status: Project["status"]) {
