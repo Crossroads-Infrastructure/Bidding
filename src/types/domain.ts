@@ -17,6 +17,9 @@ export interface CrewRate {
   effective_date: string;
   is_current: boolean;
   created_at: string;
+  // Round 3: archived roles are hidden from search/dropdowns but existing
+  // recipes/overrides keep resolving against them unchanged.
+  is_active: boolean;
 }
 
 export interface EquipmentRate {
@@ -26,6 +29,7 @@ export interface EquipmentRate {
   effective_date: string;
   is_current: boolean;
   created_at: string;
+  is_active: boolean;
 }
 
 export interface Material {
@@ -37,6 +41,7 @@ export interface Material {
   effective_date: string;
   is_current: boolean;
   created_at: string;
+  is_active: boolean;
 }
 
 // Fluid-history company-wide overhead/contingency (round 2 #6). Replaces
@@ -65,6 +70,9 @@ export interface BidItem {
   // false for one-off items created inline mid-estimate; only items with
   // this set to true appear in Bid Item Library search (round 2 #5).
   is_saved_to_library: boolean;
+  // Round 3: archived items are hidden from search/dropdowns but existing
+  // project line items keep resolving against them unchanged.
+  is_active: boolean;
 }
 
 export interface BidItemLabor {
