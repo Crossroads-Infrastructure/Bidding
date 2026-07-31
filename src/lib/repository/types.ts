@@ -80,6 +80,14 @@ export interface NewProjectInput {
   default_profit_pct?: number;
 }
 
+export interface DuplicateProjectDetailsInput {
+  project_name: string;
+  client?: string | null;
+  location?: string | null;
+  dot_or_municipality?: string | null;
+  bid_date?: string | null;
+}
+
 export interface NewProjectLineItemInput {
   project_id: string;
   bid_item_id: string;
@@ -144,14 +152,23 @@ export interface Repository {
   listCrewRates(): Promise<CrewRate[]>;
   getCurrentCrewRate(roleName: string): Promise<CrewRate | undefined>;
   addCrewRate(input: NewCrewRateInput): Promise<CrewRate>;
+  archiveCrewRate(id: string): Promise<CrewRate>;
+  restoreCrewRate(id: string): Promise<CrewRate>;
+  deleteCrewRatePermanently(roleName: string): Promise<void>;
 
   listEquipmentRates(): Promise<EquipmentRate[]>;
   getCurrentEquipmentRate(equipmentName: string): Promise<EquipmentRate | undefined>;
   addEquipmentRate(input: NewEquipmentRateInput): Promise<EquipmentRate>;
+  archiveEquipmentRate(id: string): Promise<EquipmentRate>;
+  restoreEquipmentRate(id: string): Promise<EquipmentRate>;
+  deleteEquipmentRatePermanently(equipmentName: string): Promise<void>;
 
   listMaterials(): Promise<Material[]>;
   getCurrentMaterial(materialName: string): Promise<Material | undefined>;
   addMaterial(input: NewMaterialInput): Promise<Material>;
+  archiveMaterial(id: string): Promise<Material>;
+  restoreMaterial(id: string): Promise<Material>;
+  deleteMaterialPermanently(materialName: string): Promise<void>;
 
   getCurrentCompanyDefaults(): Promise<CompanyDefaults | undefined>;
   addCompanyDefaults(input: NewCompanyDefaultsInput): Promise<CompanyDefaults>;
@@ -184,6 +201,10 @@ export interface Repository {
   createBidItem(input: NewBidItemInput): Promise<BidItemRecipe>;
   duplicateBidItem(bidItemId: string, newName: string): Promise<BidItemRecipe>;
   saveBidItemToLibrary(bidItemId: string): Promise<BidItem>;
+  listArchivedBidItems(): Promise<BidItem[]>;
+  archiveBidItem(id: string): Promise<BidItem>;
+  restoreBidItem(id: string): Promise<BidItem>;
+  deleteBidItemPermanently(id: string): Promise<void>;
 
   addBidItemLaborRow(bidItemId: string, input: NewBidItemLaborRowInput): Promise<BidItemLabor>;
   updateBidItemLaborRow(rowId: string, patch: BidItemLaborRowUpdate): Promise<BidItemLabor>;
@@ -201,6 +222,7 @@ export interface Repository {
   listProjects(): Promise<Project[]>;
   getProject(projectId: string): Promise<Project | undefined>;
   createProject(input: NewProjectInput): Promise<Project>;
+  duplicateProject(sourceProjectId: string, details: DuplicateProjectDetailsInput): Promise<Project>;
   updateProjectStatus(projectId: string, status: Project["status"]): Promise<Project>;
   updateProjectLastUsedProfit(projectId: string, profitPct: number): Promise<Project>;
 
