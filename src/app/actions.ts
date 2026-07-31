@@ -6,6 +6,7 @@ import type {
   BidItemEquipmentRowUpdate,
   BidItemLaborRowUpdate,
   BidItemMaterialRowUpdate,
+  DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
   LaborOverrideInput,
   NewBidItemEquipmentRowInput,
@@ -50,10 +51,36 @@ export async function updateProjectLastUsedProfitAction(projectId: string, profi
   return project;
 }
 
+export async function duplicateProjectAction(
+  sourceProjectId: string,
+  details: DuplicateProjectDetailsInput
+) {
+  const project = await getRepository().duplicateProject(sourceProjectId, details);
+  revalidatePath("/");
+  return project;
+}
+
 export async function addCrewRateAction(input: NewCrewRateInput) {
   const rate = await getRepository().addCrewRate(input);
   revalidatePath("/rates");
   return rate;
+}
+
+export async function archiveCrewRateAction(id: string) {
+  const rate = await getRepository().archiveCrewRate(id);
+  revalidatePath("/rates");
+  return rate;
+}
+
+export async function restoreCrewRateAction(id: string) {
+  const rate = await getRepository().restoreCrewRate(id);
+  revalidatePath("/rates");
+  return rate;
+}
+
+export async function deleteCrewRatePermanentlyAction(roleName: string) {
+  await getRepository().deleteCrewRatePermanently(roleName);
+  revalidatePath("/rates");
 }
 
 export async function addEquipmentRateAction(input: NewEquipmentRateInput) {
@@ -62,10 +89,44 @@ export async function addEquipmentRateAction(input: NewEquipmentRateInput) {
   return rate;
 }
 
+export async function archiveEquipmentRateAction(id: string) {
+  const rate = await getRepository().archiveEquipmentRate(id);
+  revalidatePath("/rates");
+  return rate;
+}
+
+export async function restoreEquipmentRateAction(id: string) {
+  const rate = await getRepository().restoreEquipmentRate(id);
+  revalidatePath("/rates");
+  return rate;
+}
+
+export async function deleteEquipmentRatePermanentlyAction(equipmentName: string) {
+  await getRepository().deleteEquipmentRatePermanently(equipmentName);
+  revalidatePath("/rates");
+}
+
 export async function addMaterialAction(input: NewMaterialInput) {
   const material = await getRepository().addMaterial(input);
   revalidatePath("/rates");
   return material;
+}
+
+export async function archiveMaterialAction(id: string) {
+  const material = await getRepository().archiveMaterial(id);
+  revalidatePath("/rates");
+  return material;
+}
+
+export async function restoreMaterialAction(id: string) {
+  const material = await getRepository().restoreMaterial(id);
+  revalidatePath("/rates");
+  return material;
+}
+
+export async function deleteMaterialPermanentlyAction(materialName: string) {
+  await getRepository().deleteMaterialPermanently(materialName);
+  revalidatePath("/rates");
 }
 
 export async function addCompanyDefaultsAction(input: NewCompanyDefaultsInput) {
@@ -159,6 +220,23 @@ export async function saveBidItemToLibraryAction(bidItemId: string) {
   const item = await getRepository().saveBidItemToLibrary(bidItemId);
   revalidatePath("/bid-items");
   return item;
+}
+
+export async function archiveBidItemAction(id: string) {
+  const item = await getRepository().archiveBidItem(id);
+  revalidatePath("/bid-items");
+  return item;
+}
+
+export async function restoreBidItemAction(id: string) {
+  const item = await getRepository().restoreBidItem(id);
+  revalidatePath("/bid-items");
+  return item;
+}
+
+export async function deleteBidItemPermanentlyAction(id: string) {
+  await getRepository().deleteBidItemPermanently(id);
+  revalidatePath("/bid-items");
 }
 
 export async function addBidItemLaborRowAction(bidItemId: string, input: NewBidItemLaborRowInput) {
