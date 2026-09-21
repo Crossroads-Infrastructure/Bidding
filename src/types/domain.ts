@@ -1,7 +1,7 @@
 // Domain types mirroring supabase/migrations/0001_initial_schema.sql
 // and 0002_round2.sql
 
-export type BidItemUnit = "SF" | "LF" | "EA" | "SY" | "LS" | "CY" | "TON" | "GAL";
+export type BidItemUnit = "SF" | "LF" | "EA" | "SY" | "LS" | "CY" | "TON" | "GAL" | "ACR" | "DAY" | "LB" | "MHR";
 export type BidItemType = "unit_price" | "lump_sum" | "sub_quote";
 export type MaterialCalcMethod = "fixed_ratio" | "dimensional" | "liquid_application";
 export type MaterialOutputUnit = "CY" | "TON" | "EA" | "GAL";

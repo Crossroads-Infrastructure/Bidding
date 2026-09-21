@@ -17,7 +17,7 @@ import type {
 } from "@/types/domain";
 import { createBidItemAction } from "../../actions";
 
-const UNITS: BidItemUnit[] = ["SF", "LF", "EA", "SY", "LS", "CY", "TON", "GAL"];
+const UNITS: BidItemUnit[] = ["SF", "LF", "EA", "SY", "LS", "CY", "TON", "GAL", "ACR", "DAY", "LB", "MHR"];
 const ITEM_TYPES: BidItemType[] = ["unit_price", "lump_sum", "sub_quote"];
 const CALC_METHODS: MaterialCalcMethod[] = ["fixed_ratio", "dimensional", "liquid_application"];
 const OUTPUT_UNITS: MaterialOutputUnit[] = ["CY", "TON", "EA", "GAL"];
