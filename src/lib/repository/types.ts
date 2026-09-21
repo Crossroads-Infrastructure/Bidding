@@ -110,6 +110,7 @@ export interface ProjectLineItemUpdate {
   item_name_override?: string | null;
   is_subcontracted?: boolean;
   sub_markup_pct?: number | null;
+  duration_days?: number | null;
 }
 
 export type NewVendorQuoteInput = { vendor_name: string; quote_amount: number; notes?: string | null };

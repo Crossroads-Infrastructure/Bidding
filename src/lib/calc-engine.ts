@@ -226,18 +226,23 @@ export function computeLineItemBaseCost(
   recipe: BidItemRecipe,
   quantity: number,
   rates: RateContext,
-  overrides: LineOverrides = {}
+  overrides: LineOverrides = {},
+  durationDays: number | null = null
 ): LineItemBaseCost {
   const materialOverrides = overrides.materials ?? new Map();
   const laborOverrides = overrides.labor ?? new Map();
   const equipmentOverrides = overrides.equipment ?? new Map();
+  // Only meaningful for lump-sum items (quantity is always 1, so it can't
+  // convey duration on its own); a library recipe entered as "hours per
+  // day" times this day count gives the job's real total hours.
+  const days = durationDays ?? 1;
 
   const labor: LaborLineCost[] = recipe.labor.map((l) => {
     const resolved = rates.resolveCrewRate(l.crew_role_id);
     const override = laborOverrides.get(l.crew_role_id);
     const hoursPerUnit = override?.override_hours ?? l.hours_per_unit;
     const headcount = override?.override_headcount ?? l.headcount;
-    const hours = quantity * hoursPerUnit * headcount;
+    const hours = quantity * hoursPerUnit * headcount * days;
     const rate = resolved.hourly_rate + (resolved.fringe ?? 0);
     return {
       crew_role_id: l.crew_role_id,
@@ -253,7 +258,7 @@ export function computeLineItemBaseCost(
     const resolved = rates.resolveEquipmentRate(e.equipment_id);
     const override = equipmentOverrides.get(e.equipment_id);
     const hoursPerUnit = override?.override_hours ?? e.hours_per_unit;
-    const hours = quantity * hoursPerUnit;
+    const hours = quantity * hoursPerUnit * days;
     return {
       equipment_id: e.equipment_id,
       name: resolved.name,
@@ -402,7 +407,7 @@ export function computeLineItemEstimate(
     };
   }
 
-  const base = computeLineItemBaseCost(recipe, line.quantity, rates, overrides);
+  const base = computeLineItemBaseCost(recipe, line.quantity, rates, overrides, line.duration_days);
   const overheadPct = resolveOverheadPct(line, item, company);
   const contingencyPct = resolveContingencyPct(line, item, company);
   const profitPct = resolveProfitPct(line, item, liveProfitPct);

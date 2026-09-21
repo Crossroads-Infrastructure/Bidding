@@ -195,6 +195,23 @@ export function LineItemRow(props: LineItemRowProps) {
                 />
                 Subcontracted
               </label>
+              {recipe.item.item_type === "lump_sum" && (
+                <label className="flex flex-col text-zinc-500">
+                  # of days
+                  <input
+                    type="number"
+                    step="0.5"
+                    placeholder="1"
+                    defaultValue={line.duration_days ?? ""}
+                    onBlur={(e) => {
+                      const v = e.target.value === "" ? null : Number(e.target.value);
+                      onFieldChange({ duration_days: v });
+                      onFieldCommit({ duration_days: v });
+                    }}
+                    className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                </label>
+              )}
               {isCustom && (
                 <button
                   onClick={async () => {

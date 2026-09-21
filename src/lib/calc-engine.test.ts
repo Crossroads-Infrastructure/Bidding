@@ -284,6 +284,19 @@ describe("computeLineItemBaseCost", () => {
     expect(equipmentLine.hours).toBeCloseTo(100 * 0.03);
     expect(equipmentLine.overridden).toBe(true);
   });
+
+  it("scales labor and equipment hours by duration_days for lump-sum items, leaving materials alone", () => {
+    const { recipe, rates } = makeRecipe();
+    const quantity = 1; // lump sum
+    const withoutDays = computeLineItemBaseCost(recipe, quantity, rates, {}, null);
+    const with20Days = computeLineItemBaseCost(recipe, quantity, rates, {}, 20);
+
+    expect(with20Days.labor[0].hours).toBeCloseTo(withoutDays.labor[0].hours * 20);
+    expect(with20Days.equipment[0].hours).toBeCloseTo(withoutDays.equipment[0].hours * 20);
+    expect(with20Days.laborCost).toBeCloseTo(withoutDays.laborCost * 20);
+    expect(with20Days.equipmentCost).toBeCloseTo(withoutDays.equipmentCost * 20);
+    expect(with20Days.materialCost).toBeCloseTo(withoutDays.materialCost);
+  });
 });
 
 describe("markup override hierarchy", () => {

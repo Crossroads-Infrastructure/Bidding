@@ -151,6 +151,12 @@ export interface ProjectLineItem {
   // the selected row in project_line_item_vendor_quotes feeds the calc.
   is_subcontracted: boolean;
   sub_markup_pct: number | null;
+  // Round 6: for lump-sum items (quantity is always 1, so it can't convey
+  // duration) -- scales every labor/equipment hour on this line by this
+  // many days, on top of quantity/headcount. Unused (treated as 1) for
+  // unit-price items, where duration already falls out of quantity x
+  // hours_per_unit.
+  duration_days: number | null;
 }
 
 export interface ProjectLineItemMaterialOverride {

@@ -706,6 +706,7 @@ export class InMemoryRepository implements Repository {
         item_name_override: null,
         is_subcontracted: sourceLine.is_subcontracted,
         sub_markup_pct: sourceLine.sub_markup_pct,
+        duration_days: sourceLine.duration_days,
       };
       store.projectLineItems.push(newLine);
 
@@ -786,6 +787,7 @@ export class InMemoryRepository implements Repository {
       item_name_override: null,
       is_subcontracted: input.is_subcontracted ?? bidItem?.item_type === "sub_quote",
       sub_markup_pct: input.sub_markup_pct ?? null,
+      duration_days: null,
     };
     store.projectLineItems.push(created);
 
