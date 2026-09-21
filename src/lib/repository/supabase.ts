@@ -57,6 +57,67 @@ function unwrap<T>({ data, error }: { data: T | null; error: { message: string }
   return data;
 }
 
+// PostgREST returns Postgres `numeric` and `bigint` columns as JSON strings
+// (to avoid precision loss when a client parses them as IEEE-754 doubles),
+// not as JSON numbers. Every domain type in src/types/domain.ts declares
+// these fields as `number`, so without this coercion step the app receives
+// strings where its own types promise numbers -- harmless until something
+// calls .toFixed() (crashes: strings don't have that method) or does
+// arithmetic on the value (silently produces NaN / wrong totals instead of
+// a crash). This coerces right at the repository boundary so every caller
+// can trust the TypeScript types.
+function coerceNumeric<T extends object>(row: T, fields: (keyof T)[]): T {
+  const mutable = row as Record<string, unknown>;
+  for (const field of fields) {
+    const value = mutable[field as string];
+    if (value !== null && value !== undefined && typeof value !== "number") {
+      mutable[field as string] = Number(value);
+    }
+  }
+  return row;
+}
+
+function coerceNumericList<T extends object>(rows: T[], fields: (keyof T)[]): T[] {
+  return rows.map((row) => coerceNumeric(row, fields));
+}
+
+const CREW_RATE_NUMERIC_FIELDS: (keyof CrewRate)[] = ["hourly_rate", "fringe"];
+const EQUIPMENT_RATE_NUMERIC_FIELDS: (keyof EquipmentRate)[] = ["hourly_rate"];
+const MATERIAL_NUMERIC_FIELDS: (keyof Material)[] = ["rate"];
+const COMPANY_DEFAULTS_NUMERIC_FIELDS: (keyof CompanyDefaults)[] = ["overhead_pct", "contingency_pct"];
+const BID_ITEM_NUMERIC_FIELDS: (keyof BidItem)[] = [
+  "default_overhead_pct",
+  "default_profit_pct",
+  "default_contingency_pct",
+];
+const BID_ITEM_LABOR_NUMERIC_FIELDS: (keyof BidItemLabor)[] = ["hours_per_unit"];
+const BID_ITEM_EQUIPMENT_NUMERIC_FIELDS: (keyof BidItemEquipment)[] = ["hours_per_unit"];
+const BID_ITEM_MATERIAL_NUMERIC_FIELDS: (keyof BidItemMaterial)[] = [
+  "qty_per_unit",
+  "thickness_in",
+  "width_in",
+  "depth_in",
+  "density_factor",
+  "application_rate",
+  "waste_pct",
+];
+const PROJECT_NUMERIC_FIELDS: (keyof Project)[] = ["default_profit_pct"];
+const PROJECT_LINE_ITEM_NUMERIC_FIELDS: (keyof ProjectLineItem)[] = [
+  "quantity",
+  "override_overhead_pct",
+  "override_profit_pct",
+  "override_contingency_pct",
+  "manual_rounded_rate",
+];
+const MATERIAL_OVERRIDE_NUMERIC_FIELDS: (keyof ProjectLineItemMaterialOverride)[] = [
+  "override_rate",
+  "override_qty",
+];
+const LABOR_OVERRIDE_NUMERIC_FIELDS: (keyof ProjectLineItemLaborOverride)[] = ["override_hours"];
+const EQUIPMENT_OVERRIDE_NUMERIC_FIELDS: (keyof ProjectLineItemEquipmentOverride)[] = ["override_hours"];
+const VENDOR_QUOTE_NUMERIC_FIELDS: (keyof ProjectLineItemVendorQuote)[] = ["quote_amount"];
+const PROJECT_DOCUMENT_NUMERIC_FIELDS: (keyof ProjectDocument)[] = ["file_size"];
+
 // Mirrors in-memory.ts's referenceBlockMessage: builds the round-3
 // permanent-delete guardrail message from named reference counts. Returns
 // null (safe to delete) when every count is zero.
@@ -79,7 +140,10 @@ export class SupabaseRepository implements Repository {
   }
 
   async listCrewRates() {
-    return unwrap<CrewRate[]>(await this.client.from("crew_rates").select("*").order("role_name"));
+    return coerceNumericList(
+      unwrap<CrewRate[]>(await this.client.from("crew_rates").select("*").order("role_name")),
+      CREW_RATE_NUMERIC_FIELDS
+    );
   }
 
   async getCurrentCrewRate(roleName: string) {
@@ -90,7 +154,7 @@ export class SupabaseRepository implements Repository {
       .eq("is_current", true)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? undefined;
+    return data ? coerceNumeric(data as CrewRate, CREW_RATE_NUMERIC_FIELDS) : undefined;
   }
 
   async addCrewRate(input: NewCrewRateInput) {
@@ -101,20 +165,29 @@ export class SupabaseRepository implements Repository {
       .eq("is_current", true);
     if (updateError) throw new Error(updateError.message);
 
-    return unwrap<CrewRate>(
-      await this.client.from("crew_rates").insert({ ...input, is_current: true }).select().single()
+    return coerceNumeric(
+      unwrap<CrewRate>(
+        await this.client.from("crew_rates").insert({ ...input, is_current: true }).select().single()
+      ),
+      CREW_RATE_NUMERIC_FIELDS
     );
   }
 
   async archiveCrewRate(id: string) {
-    return unwrap<CrewRate>(
-      await this.client.from("crew_rates").update({ is_active: false }).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<CrewRate>(
+        await this.client.from("crew_rates").update({ is_active: false }).eq("id", id).select().single()
+      ),
+      CREW_RATE_NUMERIC_FIELDS
     );
   }
 
   async restoreCrewRate(id: string) {
-    return unwrap<CrewRate>(
-      await this.client.from("crew_rates").update({ is_active: true }).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<CrewRate>(
+        await this.client.from("crew_rates").update({ is_active: true }).eq("id", id).select().single()
+      ),
+      CREW_RATE_NUMERIC_FIELDS
     );
   }
 
@@ -156,7 +229,10 @@ export class SupabaseRepository implements Repository {
   }
 
   async listEquipmentRates() {
-    return unwrap<EquipmentRate[]>(await this.client.from("equipment_rates").select("*").order("equipment_name"));
+    return coerceNumericList(
+      unwrap<EquipmentRate[]>(await this.client.from("equipment_rates").select("*").order("equipment_name")),
+      EQUIPMENT_RATE_NUMERIC_FIELDS
+    );
   }
 
   async getCurrentEquipmentRate(equipmentName: string) {
@@ -167,7 +243,7 @@ export class SupabaseRepository implements Repository {
       .eq("is_current", true)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? undefined;
+    return data ? coerceNumeric(data as EquipmentRate, EQUIPMENT_RATE_NUMERIC_FIELDS) : undefined;
   }
 
   async addEquipmentRate(input: NewEquipmentRateInput) {
@@ -178,24 +254,33 @@ export class SupabaseRepository implements Repository {
       .eq("is_current", true);
     if (updateError) throw new Error(updateError.message);
 
-    return unwrap<EquipmentRate>(
-      await this.client
-        .from("equipment_rates")
-        .insert({ ...input, is_current: true })
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<EquipmentRate>(
+        await this.client
+          .from("equipment_rates")
+          .insert({ ...input, is_current: true })
+          .select()
+          .single()
+      ),
+      EQUIPMENT_RATE_NUMERIC_FIELDS
     );
   }
 
   async archiveEquipmentRate(id: string) {
-    return unwrap<EquipmentRate>(
-      await this.client.from("equipment_rates").update({ is_active: false }).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<EquipmentRate>(
+        await this.client.from("equipment_rates").update({ is_active: false }).eq("id", id).select().single()
+      ),
+      EQUIPMENT_RATE_NUMERIC_FIELDS
     );
   }
 
   async restoreEquipmentRate(id: string) {
-    return unwrap<EquipmentRate>(
-      await this.client.from("equipment_rates").update({ is_active: true }).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<EquipmentRate>(
+        await this.client.from("equipment_rates").update({ is_active: true }).eq("id", id).select().single()
+      ),
+      EQUIPMENT_RATE_NUMERIC_FIELDS
     );
   }
 
@@ -237,7 +322,10 @@ export class SupabaseRepository implements Repository {
   }
 
   async listMaterials() {
-    return unwrap<Material[]>(await this.client.from("materials").select("*").order("material_name"));
+    return coerceNumericList(
+      unwrap<Material[]>(await this.client.from("materials").select("*").order("material_name")),
+      MATERIAL_NUMERIC_FIELDS
+    );
   }
 
   async getCurrentMaterial(materialName: string) {
@@ -248,7 +336,7 @@ export class SupabaseRepository implements Repository {
       .eq("is_current", true)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? undefined;
+    return data ? coerceNumeric(data as Material, MATERIAL_NUMERIC_FIELDS) : undefined;
   }
 
   async addMaterial(input: NewMaterialInput) {
@@ -259,20 +347,29 @@ export class SupabaseRepository implements Repository {
       .eq("is_current", true);
     if (updateError) throw new Error(updateError.message);
 
-    return unwrap<Material>(
-      await this.client.from("materials").insert({ ...input, is_current: true }).select().single()
+    return coerceNumeric(
+      unwrap<Material>(
+        await this.client.from("materials").insert({ ...input, is_current: true }).select().single()
+      ),
+      MATERIAL_NUMERIC_FIELDS
     );
   }
 
   async archiveMaterial(id: string) {
-    return unwrap<Material>(
-      await this.client.from("materials").update({ is_active: false }).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<Material>(
+        await this.client.from("materials").update({ is_active: false }).eq("id", id).select().single()
+      ),
+      MATERIAL_NUMERIC_FIELDS
     );
   }
 
   async restoreMaterial(id: string) {
-    return unwrap<Material>(
-      await this.client.from("materials").update({ is_active: true }).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<Material>(
+        await this.client.from("materials").update({ is_active: true }).eq("id", id).select().single()
+      ),
+      MATERIAL_NUMERIC_FIELDS
     );
   }
 
@@ -316,7 +413,7 @@ export class SupabaseRepository implements Repository {
       .eq("is_current", true)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return (data as CompanyDefaults | null) ?? undefined;
+    return data ? coerceNumeric(data as CompanyDefaults, COMPANY_DEFAULTS_NUMERIC_FIELDS) : undefined;
   }
 
   async addCompanyDefaults(input: NewCompanyDefaultsInput) {
@@ -326,12 +423,15 @@ export class SupabaseRepository implements Repository {
       .eq("is_current", true);
     if (updateError) throw new Error(updateError.message);
 
-    return unwrap<CompanyDefaults>(
-      await this.client
-        .from("company_defaults")
-        .insert({ ...input, is_current: true })
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<CompanyDefaults>(
+        await this.client
+          .from("company_defaults")
+          .insert({ ...input, is_current: true })
+          .select()
+          .single()
+      ),
+      COMPANY_DEFAULTS_NUMERIC_FIELDS
     );
   }
 
@@ -433,36 +533,48 @@ export class SupabaseRepository implements Repository {
   // ---------------- Bid item catalog ----------------
 
   async listBidItems() {
-    return unwrap<BidItem[]>(
-      await this.client
-        .from("bid_items")
-        .select("*")
-        .eq("is_saved_to_library", true)
-        .eq("is_active", true)
-        .order("item_name")
+    return coerceNumericList(
+      unwrap<BidItem[]>(
+        await this.client
+          .from("bid_items")
+          .select("*")
+          .eq("is_saved_to_library", true)
+          .eq("is_active", true)
+          .order("item_name")
+      ),
+      BID_ITEM_NUMERIC_FIELDS
     );
   }
 
   async listArchivedBidItems() {
-    return unwrap<BidItem[]>(
-      await this.client
-        .from("bid_items")
-        .select("*")
-        .eq("is_saved_to_library", true)
-        .eq("is_active", false)
-        .order("item_name")
+    return coerceNumericList(
+      unwrap<BidItem[]>(
+        await this.client
+          .from("bid_items")
+          .select("*")
+          .eq("is_saved_to_library", true)
+          .eq("is_active", false)
+          .order("item_name")
+      ),
+      BID_ITEM_NUMERIC_FIELDS
     );
   }
 
   async archiveBidItem(id: string) {
-    return unwrap<BidItem>(
-      await this.client.from("bid_items").update({ is_active: false }).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<BidItem>(
+        await this.client.from("bid_items").update({ is_active: false }).eq("id", id).select().single()
+      ),
+      BID_ITEM_NUMERIC_FIELDS
     );
   }
 
   async restoreBidItem(id: string) {
-    return unwrap<BidItem>(
-      await this.client.from("bid_items").update({ is_active: true }).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<BidItem>(
+        await this.client.from("bid_items").update({ is_active: true }).eq("id", id).select().single()
+      ),
+      BID_ITEM_NUMERIC_FIELDS
     );
   }
 
@@ -486,14 +598,17 @@ export class SupabaseRepository implements Repository {
   async searchBidItems(query: string) {
     const q = query.trim();
     if (!q) return this.listBidItems();
-    return unwrap<BidItem[]>(
-      await this.client
-        .from("bid_items")
-        .select("*")
-        .eq("is_saved_to_library", true)
-        .eq("is_active", true)
-        .or(`item_name.ilike.%${q}%,description.ilike.%${q}%`)
-        .order("item_name")
+    return coerceNumericList(
+      unwrap<BidItem[]>(
+        await this.client
+          .from("bid_items")
+          .select("*")
+          .eq("is_saved_to_library", true)
+          .eq("is_active", true)
+          .or(`item_name.ilike.%${q}%,description.ilike.%${q}%`)
+          .order("item_name")
+      ),
+      BID_ITEM_NUMERIC_FIELDS
     );
   }
 
@@ -507,59 +622,76 @@ export class SupabaseRepository implements Repository {
     if (!item) return undefined;
 
     const [labor, equipment, materials] = await Promise.all([
-      unwrap(await this.client.from("bid_item_labor").select("*").eq("bid_item_id", bidItemId)),
-      unwrap(
+      unwrap<BidItemLabor[]>(await this.client.from("bid_item_labor").select("*").eq("bid_item_id", bidItemId)),
+      unwrap<BidItemEquipment[]>(
         await this.client.from("bid_item_equipment").select("*").eq("bid_item_id", bidItemId)
       ),
-      unwrap(
+      unwrap<BidItemMaterial[]>(
         await this.client.from("bid_item_materials").select("*").eq("bid_item_id", bidItemId)
       ),
     ]);
 
-    return { item, labor, equipment, materials };
+    return {
+      item: coerceNumeric(item as BidItem, BID_ITEM_NUMERIC_FIELDS),
+      labor: coerceNumericList(labor, BID_ITEM_LABOR_NUMERIC_FIELDS),
+      equipment: coerceNumericList(equipment, BID_ITEM_EQUIPMENT_NUMERIC_FIELDS),
+      materials: coerceNumericList(materials, BID_ITEM_MATERIAL_NUMERIC_FIELDS),
+    };
   }
 
   async createBidItem(input: NewBidItemInput): Promise<BidItemRecipe> {
-    const item = unwrap<BidItem>(
-      await this.client
-        .from("bid_items")
-        .insert({
-          item_name: input.item_name,
-          description: input.description ?? null,
-          unit: input.unit,
-          item_type: input.item_type,
-          default_overhead_pct: input.default_overhead_pct ?? null,
-          default_profit_pct: input.default_profit_pct ?? null,
-          default_contingency_pct: input.default_contingency_pct ?? null,
-          notes: input.notes ?? null,
-          is_saved_to_library: input.is_saved_to_library ?? true,
-        })
-        .select()
-        .single()
+    const item = coerceNumeric(
+      unwrap<BidItem>(
+        await this.client
+          .from("bid_items")
+          .insert({
+            item_name: input.item_name,
+            description: input.description ?? null,
+            unit: input.unit,
+            item_type: input.item_type,
+            default_overhead_pct: input.default_overhead_pct ?? null,
+            default_profit_pct: input.default_profit_pct ?? null,
+            default_contingency_pct: input.default_contingency_pct ?? null,
+            notes: input.notes ?? null,
+            is_saved_to_library: input.is_saved_to_library ?? true,
+          })
+          .select()
+          .single()
+      ),
+      BID_ITEM_NUMERIC_FIELDS
     );
 
     const labor = input.labor.length
-      ? unwrap(
-          await this.client
-            .from("bid_item_labor")
-            .insert(input.labor.map((l) => ({ ...l, bid_item_id: item.id })))
-            .select()
+      ? coerceNumericList(
+          unwrap<BidItemLabor[]>(
+            await this.client
+              .from("bid_item_labor")
+              .insert(input.labor.map((l) => ({ ...l, bid_item_id: item.id })))
+              .select()
+          ),
+          BID_ITEM_LABOR_NUMERIC_FIELDS
         )
       : [];
     const equipment = input.equipment.length
-      ? unwrap(
-          await this.client
-            .from("bid_item_equipment")
-            .insert(input.equipment.map((e) => ({ ...e, bid_item_id: item.id })))
-            .select()
+      ? coerceNumericList(
+          unwrap<BidItemEquipment[]>(
+            await this.client
+              .from("bid_item_equipment")
+              .insert(input.equipment.map((e) => ({ ...e, bid_item_id: item.id })))
+              .select()
+          ),
+          BID_ITEM_EQUIPMENT_NUMERIC_FIELDS
         )
       : [];
     const materials = input.materials.length
-      ? unwrap(
-          await this.client
-            .from("bid_item_materials")
-            .insert(input.materials.map((m) => ({ ...m, bid_item_id: item.id })))
-            .select()
+      ? coerceNumericList(
+          unwrap<BidItemMaterial[]>(
+            await this.client
+              .from("bid_item_materials")
+              .insert(input.materials.map((m) => ({ ...m, bid_item_id: item.id })))
+              .select()
+          ),
+          BID_ITEM_MATERIAL_NUMERIC_FIELDS
         )
       : [];
 
@@ -593,29 +725,38 @@ export class SupabaseRepository implements Repository {
   }
 
   async saveBidItemToLibrary(bidItemId: string) {
-    return unwrap<BidItem>(
-      await this.client
-        .from("bid_items")
-        .update({ is_saved_to_library: true })
-        .eq("id", bidItemId)
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<BidItem>(
+        await this.client
+          .from("bid_items")
+          .update({ is_saved_to_library: true })
+          .eq("id", bidItemId)
+          .select()
+          .single()
+      ),
+      BID_ITEM_NUMERIC_FIELDS
     );
   }
 
   async addBidItemLaborRow(bidItemId: string, input: NewBidItemLaborRowInput) {
-    return unwrap<BidItemLabor>(
-      await this.client
-        .from("bid_item_labor")
-        .insert({ ...input, bid_item_id: bidItemId })
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<BidItemLabor>(
+        await this.client
+          .from("bid_item_labor")
+          .insert({ ...input, bid_item_id: bidItemId })
+          .select()
+          .single()
+      ),
+      BID_ITEM_LABOR_NUMERIC_FIELDS
     );
   }
 
   async updateBidItemLaborRow(rowId: string, patch: BidItemLaborRowUpdate) {
-    return unwrap<BidItemLabor>(
-      await this.client.from("bid_item_labor").update(patch).eq("id", rowId).select().single()
+    return coerceNumeric(
+      unwrap<BidItemLabor>(
+        await this.client.from("bid_item_labor").update(patch).eq("id", rowId).select().single()
+      ),
+      BID_ITEM_LABOR_NUMERIC_FIELDS
     );
   }
 
@@ -625,18 +766,24 @@ export class SupabaseRepository implements Repository {
   }
 
   async addBidItemEquipmentRow(bidItemId: string, input: NewBidItemEquipmentRowInput) {
-    return unwrap<BidItemEquipment>(
-      await this.client
-        .from("bid_item_equipment")
-        .insert({ ...input, bid_item_id: bidItemId })
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<BidItemEquipment>(
+        await this.client
+          .from("bid_item_equipment")
+          .insert({ ...input, bid_item_id: bidItemId })
+          .select()
+          .single()
+      ),
+      BID_ITEM_EQUIPMENT_NUMERIC_FIELDS
     );
   }
 
   async updateBidItemEquipmentRow(rowId: string, patch: BidItemEquipmentRowUpdate) {
-    return unwrap<BidItemEquipment>(
-      await this.client.from("bid_item_equipment").update(patch).eq("id", rowId).select().single()
+    return coerceNumeric(
+      unwrap<BidItemEquipment>(
+        await this.client.from("bid_item_equipment").update(patch).eq("id", rowId).select().single()
+      ),
+      BID_ITEM_EQUIPMENT_NUMERIC_FIELDS
     );
   }
 
@@ -646,18 +793,24 @@ export class SupabaseRepository implements Repository {
   }
 
   async addBidItemMaterialRow(bidItemId: string, input: NewBidItemMaterialRowInput) {
-    return unwrap<BidItemMaterial>(
-      await this.client
-        .from("bid_item_materials")
-        .insert({ ...input, bid_item_id: bidItemId })
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<BidItemMaterial>(
+        await this.client
+          .from("bid_item_materials")
+          .insert({ ...input, bid_item_id: bidItemId })
+          .select()
+          .single()
+      ),
+      BID_ITEM_MATERIAL_NUMERIC_FIELDS
     );
   }
 
   async updateBidItemMaterialRow(rowId: string, patch: BidItemMaterialRowUpdate) {
-    return unwrap<BidItemMaterial>(
-      await this.client.from("bid_item_materials").update(patch).eq("id", rowId).select().single()
+    return coerceNumeric(
+      unwrap<BidItemMaterial>(
+        await this.client.from("bid_item_materials").update(patch).eq("id", rowId).select().single()
+      ),
+      BID_ITEM_MATERIAL_NUMERIC_FIELDS
     );
   }
 
@@ -669,8 +822,11 @@ export class SupabaseRepository implements Repository {
   // ---------------- Projects ----------------
 
   async listProjects() {
-    return unwrap<Project[]>(
-      await this.client.from("projects").select("*").order("created_at", { ascending: false })
+    return coerceNumericList(
+      unwrap<Project[]>(
+        await this.client.from("projects").select("*").order("created_at", { ascending: false })
+      ),
+      PROJECT_NUMERIC_FIELDS
     );
   }
 
@@ -681,7 +837,7 @@ export class SupabaseRepository implements Repository {
       .eq("id", projectId)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? undefined;
+    return data ? coerceNumeric(data as Project, PROJECT_NUMERIC_FIELDS) : undefined;
   }
 
   async createProject(input: NewProjectInput) {
@@ -696,14 +852,19 @@ export class SupabaseRepository implements Repository {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      defaultProfitPct = lastProject?.default_profit_pct ?? 0;
+      defaultProfitPct = lastProject?.default_profit_pct !== undefined && lastProject?.default_profit_pct !== null
+        ? Number(lastProject.default_profit_pct)
+        : 0;
     }
-    return unwrap<Project>(
-      await this.client
-        .from("projects")
-        .insert({ ...input, default_profit_pct: defaultProfitPct, status: "estimating" })
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<Project>(
+        await this.client
+          .from("projects")
+          .insert({ ...input, default_profit_pct: defaultProfitPct, status: "estimating" })
+          .select()
+          .single()
+      ),
+      PROJECT_NUMERIC_FIELDS
     );
   }
 
@@ -813,31 +974,40 @@ export class SupabaseRepository implements Repository {
   }
 
   async updateProjectStatus(projectId: string, status: Project["status"]) {
-    return unwrap<Project>(
-      await this.client.from("projects").update({ status }).eq("id", projectId).select().single()
+    return coerceNumeric(
+      unwrap<Project>(
+        await this.client.from("projects").update({ status }).eq("id", projectId).select().single()
+      ),
+      PROJECT_NUMERIC_FIELDS
     );
   }
 
   async updateProjectLastUsedProfit(projectId: string, profitPct: number) {
-    return unwrap<Project>(
-      await this.client
-        .from("projects")
-        .update({ default_profit_pct: profitPct })
-        .eq("id", projectId)
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<Project>(
+        await this.client
+          .from("projects")
+          .update({ default_profit_pct: profitPct })
+          .eq("id", projectId)
+          .select()
+          .single()
+      ),
+      PROJECT_NUMERIC_FIELDS
     );
   }
 
   // ---------------- Project line items ----------------
 
   async listProjectLineItems(projectId: string) {
-    return unwrap<ProjectLineItem[]>(
-      await this.client
-        .from("project_line_items")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("sort_order")
+    return coerceNumericList(
+      unwrap<ProjectLineItem[]>(
+        await this.client
+          .from("project_line_items")
+          .select("*")
+          .eq("project_id", projectId)
+          .order("sort_order")
+      ),
+      PROJECT_LINE_ITEM_NUMERIC_FIELDS
     );
   }
 
@@ -862,12 +1032,15 @@ export class SupabaseRepository implements Repository {
       isSubcontracted = bidItem?.item_type === "sub_quote";
     }
 
-    const created = unwrap<ProjectLineItem>(
-      await this.client
-        .from("project_line_items")
-        .insert({ ...input, is_subcontracted: isSubcontracted, sort_order: nextSort })
-        .select()
-        .single()
+    const created = coerceNumeric(
+      unwrap<ProjectLineItem>(
+        await this.client
+          .from("project_line_items")
+          .insert({ ...input, is_subcontracted: isSubcontracted, sort_order: nextSort })
+          .select()
+          .single()
+      ),
+      PROJECT_LINE_ITEM_NUMERIC_FIELDS
     );
 
     await this.client
@@ -879,8 +1052,11 @@ export class SupabaseRepository implements Repository {
   }
 
   async updateProjectLineItem(id: string, update: ProjectLineItemUpdate) {
-    return unwrap<ProjectLineItem>(
-      await this.client.from("project_line_items").update(update).eq("id", id).select().single()
+    return coerceNumeric(
+      unwrap<ProjectLineItem>(
+        await this.client.from("project_line_items").update(update).eq("id", id).select().single()
+      ),
+      PROJECT_LINE_ITEM_NUMERIC_FIELDS
     );
   }
 
@@ -892,11 +1068,14 @@ export class SupabaseRepository implements Repository {
   // ---------------- Material / labor / equipment overrides ----------------
 
   async listMaterialOverrides(projectLineItemId: string) {
-    return unwrap<ProjectLineItemMaterialOverride[]>(
-      await this.client
-        .from("project_line_item_material_overrides")
-        .select("*")
-        .eq("project_line_item_id", projectLineItemId)
+    return coerceNumericList(
+      unwrap<ProjectLineItemMaterialOverride[]>(
+        await this.client
+          .from("project_line_item_material_overrides")
+          .select("*")
+          .eq("project_line_item_id", projectLineItemId)
+      ),
+      MATERIAL_OVERRIDE_NUMERIC_FIELDS
     );
   }
 
@@ -905,15 +1084,18 @@ export class SupabaseRepository implements Repository {
     materialId: string,
     override: { override_rate?: number | null; override_qty?: number | null }
   ) {
-    return unwrap<ProjectLineItemMaterialOverride>(
-      await this.client
-        .from("project_line_item_material_overrides")
-        .upsert(
-          { project_line_item_id: projectLineItemId, material_id: materialId, ...override },
-          { onConflict: "project_line_item_id,material_id" }
-        )
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<ProjectLineItemMaterialOverride>(
+        await this.client
+          .from("project_line_item_material_overrides")
+          .upsert(
+            { project_line_item_id: projectLineItemId, material_id: materialId, ...override },
+            { onConflict: "project_line_item_id,material_id" }
+          )
+          .select()
+          .single()
+      ),
+      MATERIAL_OVERRIDE_NUMERIC_FIELDS
     );
   }
 
@@ -927,24 +1109,30 @@ export class SupabaseRepository implements Repository {
   }
 
   async listLaborOverrides(projectLineItemId: string) {
-    return unwrap<ProjectLineItemLaborOverride[]>(
-      await this.client
-        .from("project_line_item_labor_overrides")
-        .select("*")
-        .eq("project_line_item_id", projectLineItemId)
+    return coerceNumericList(
+      unwrap<ProjectLineItemLaborOverride[]>(
+        await this.client
+          .from("project_line_item_labor_overrides")
+          .select("*")
+          .eq("project_line_item_id", projectLineItemId)
+      ),
+      LABOR_OVERRIDE_NUMERIC_FIELDS
     );
   }
 
   async setLaborOverride(projectLineItemId: string, crewRoleId: string, override: LaborOverrideInput) {
-    return unwrap<ProjectLineItemLaborOverride>(
-      await this.client
-        .from("project_line_item_labor_overrides")
-        .upsert(
-          { project_line_item_id: projectLineItemId, crew_role_id: crewRoleId, ...override },
-          { onConflict: "project_line_item_id,crew_role_id" }
-        )
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<ProjectLineItemLaborOverride>(
+        await this.client
+          .from("project_line_item_labor_overrides")
+          .upsert(
+            { project_line_item_id: projectLineItemId, crew_role_id: crewRoleId, ...override },
+            { onConflict: "project_line_item_id,crew_role_id" }
+          )
+          .select()
+          .single()
+      ),
+      LABOR_OVERRIDE_NUMERIC_FIELDS
     );
   }
 
@@ -958,24 +1146,30 @@ export class SupabaseRepository implements Repository {
   }
 
   async listEquipmentOverrides(projectLineItemId: string) {
-    return unwrap<ProjectLineItemEquipmentOverride[]>(
-      await this.client
-        .from("project_line_item_equipment_overrides")
-        .select("*")
-        .eq("project_line_item_id", projectLineItemId)
+    return coerceNumericList(
+      unwrap<ProjectLineItemEquipmentOverride[]>(
+        await this.client
+          .from("project_line_item_equipment_overrides")
+          .select("*")
+          .eq("project_line_item_id", projectLineItemId)
+      ),
+      EQUIPMENT_OVERRIDE_NUMERIC_FIELDS
     );
   }
 
   async setEquipmentOverride(projectLineItemId: string, equipmentId: string, override: EquipmentOverrideInput) {
-    return unwrap<ProjectLineItemEquipmentOverride>(
-      await this.client
-        .from("project_line_item_equipment_overrides")
-        .upsert(
-          { project_line_item_id: projectLineItemId, equipment_id: equipmentId, ...override },
-          { onConflict: "project_line_item_id,equipment_id" }
-        )
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<ProjectLineItemEquipmentOverride>(
+        await this.client
+          .from("project_line_item_equipment_overrides")
+          .upsert(
+            { project_line_item_id: projectLineItemId, equipment_id: equipmentId, ...override },
+            { onConflict: "project_line_item_id,equipment_id" }
+          )
+          .select()
+          .single()
+      ),
+      EQUIPMENT_OVERRIDE_NUMERIC_FIELDS
     );
   }
 
@@ -991,11 +1185,14 @@ export class SupabaseRepository implements Repository {
   // ---------------- Vendor quotes (subcontracting) ----------------
 
   async listVendorQuotes(projectLineItemId: string) {
-    return unwrap<ProjectLineItemVendorQuote[]>(
-      await this.client
-        .from("project_line_item_vendor_quotes")
-        .select("*")
-        .eq("project_line_item_id", projectLineItemId)
+    return coerceNumericList(
+      unwrap<ProjectLineItemVendorQuote[]>(
+        await this.client
+          .from("project_line_item_vendor_quotes")
+          .select("*")
+          .eq("project_line_item_id", projectLineItemId)
+      ),
+      VENDOR_QUOTE_NUMERIC_FIELDS
     );
   }
 
@@ -1006,18 +1203,21 @@ export class SupabaseRepository implements Repository {
         .select("*")
         .eq("project_line_item_id", projectLineItemId)
     );
-    return unwrap<ProjectLineItemVendorQuote>(
-      await this.client
-        .from("project_line_item_vendor_quotes")
-        .insert({
-          project_line_item_id: projectLineItemId,
-          vendor_name: input.vendor_name,
-          quote_amount: input.quote_amount,
-          notes: input.notes ?? null,
-          is_selected: existing.length === 0,
-        })
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<ProjectLineItemVendorQuote>(
+        await this.client
+          .from("project_line_item_vendor_quotes")
+          .insert({
+            project_line_item_id: projectLineItemId,
+            vendor_name: input.vendor_name,
+            quote_amount: input.quote_amount,
+            notes: input.notes ?? null,
+            is_selected: existing.length === 0,
+          })
+          .select()
+          .single()
+      ),
+      VENDOR_QUOTE_NUMERIC_FIELDS
     );
   }
 
@@ -1035,13 +1235,16 @@ export class SupabaseRepository implements Repository {
           .eq("project_line_item_id", quote.project_line_item_id);
       }
     }
-    return unwrap<ProjectLineItemVendorQuote>(
-      await this.client
-        .from("project_line_item_vendor_quotes")
-        .update(patch)
-        .eq("id", id)
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<ProjectLineItemVendorQuote>(
+        await this.client
+          .from("project_line_item_vendor_quotes")
+          .update(patch)
+          .eq("id", id)
+          .select()
+          .single()
+      ),
+      VENDOR_QUOTE_NUMERIC_FIELDS
     );
   }
 
@@ -1050,13 +1253,16 @@ export class SupabaseRepository implements Repository {
       .from("project_line_item_vendor_quotes")
       .update({ is_selected: false })
       .eq("project_line_item_id", projectLineItemId);
-    return unwrap<ProjectLineItemVendorQuote>(
-      await this.client
-        .from("project_line_item_vendor_quotes")
-        .update({ is_selected: true })
-        .eq("id", quoteId)
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<ProjectLineItemVendorQuote>(
+        await this.client
+          .from("project_line_item_vendor_quotes")
+          .update({ is_selected: true })
+          .eq("id", quoteId)
+          .select()
+          .single()
+      ),
+      VENDOR_QUOTE_NUMERIC_FIELDS
     );
   }
 
@@ -1068,23 +1274,29 @@ export class SupabaseRepository implements Repository {
   // ---------------- Bid history ----------------
 
   async listBidHistory(bidItemId: string) {
-    return unwrap<Array<{ unit_price_bid: number; outcome: string | null; date: string }>>(
-      await this.client
-        .from("bid_history")
-        .select("unit_price_bid, outcome, date")
-        .eq("bid_item_id", bidItemId)
+    return coerceNumericList(
+      unwrap<Array<{ unit_price_bid: number; outcome: string | null; date: string }>>(
+        await this.client
+          .from("bid_history")
+          .select("unit_price_bid, outcome, date")
+          .eq("bid_item_id", bidItemId)
+      ),
+      ["unit_price_bid"]
     );
   }
 
   // ---------------- Documents ----------------
 
   async listProjectDocuments(projectId: string) {
-    return unwrap<ProjectDocument[]>(
-      await this.client
-        .from("project_documents")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("uploaded_date", { ascending: false })
+    return coerceNumericList(
+      unwrap<ProjectDocument[]>(
+        await this.client
+          .from("project_documents")
+          .select("*")
+          .eq("project_id", projectId)
+          .order("uploaded_date", { ascending: false })
+      ),
+      PROJECT_DOCUMENT_NUMERIC_FIELDS
     );
   }
 
@@ -1097,18 +1309,21 @@ export class SupabaseRepository implements Repository {
 
     const { data: publicUrl } = this.client.storage.from(DOCUMENTS_BUCKET).getPublicUrl(path);
 
-    return unwrap<ProjectDocument>(
-      await this.client
-        .from("project_documents")
-        .insert({
-          project_id: input.project_id,
-          category: input.category,
-          file_name: input.file_name,
-          file_size: input.file_size,
-          file_url: publicUrl.publicUrl,
-        })
-        .select()
-        .single()
+    return coerceNumeric(
+      unwrap<ProjectDocument>(
+        await this.client
+          .from("project_documents")
+          .insert({
+            project_id: input.project_id,
+            category: input.category,
+            file_name: input.file_name,
+            file_size: input.file_size,
+            file_url: publicUrl.publicUrl,
+          })
+          .select()
+          .single()
+      ),
+      PROJECT_DOCUMENT_NUMERIC_FIELDS
     );
   }
 
