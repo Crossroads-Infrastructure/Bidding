@@ -603,9 +603,41 @@ export class InMemoryRepository implements Repository {
   // ---------------- Projects ----------------
 
   async listProjects() {
-    return [...store.projects].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    return [...store.projects]
+      .filter((p) => p.is_active)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+
+  async listArchivedProjects() {
+    return [...store.projects]
+      .filter((p) => !p.is_active)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+
+  async archiveProject(id: string) {
+    const project = store.projects.find((p) => p.id === id);
+    if (!project) throw new Error(`project not found: ${id}`);
+    project.is_active = false;
+    return project;
+  }
+
+  async restoreProject(id: string) {
+    const project = store.projects.find((p) => p.id === id);
+    if (!project) throw new Error(`project not found: ${id}`);
+    project.is_active = true;
+    return project;
+  }
+
+  async deleteProjectPermanently(id: string) {
+    const lineIds = store.projectLineItems.filter((li) => li.project_id === id).map((li) => li.id);
+    store.projects = store.projects.filter((p) => p.id !== id);
+    store.projectLineItems = store.projectLineItems.filter((li) => li.project_id !== id);
+    store.materialOverrides = store.materialOverrides.filter((o) => !lineIds.includes(o.project_line_item_id));
+    store.laborOverrides = store.laborOverrides.filter((o) => !lineIds.includes(o.project_line_item_id));
+    store.equipmentOverrides = store.equipmentOverrides.filter((o) => !lineIds.includes(o.project_line_item_id));
+    store.vendorQuotes = store.vendorQuotes.filter((q) => !lineIds.includes(q.project_line_item_id));
+    store.documents = store.documents.filter((d) => d.project_id !== id);
+    store.bidHistory = store.bidHistory.filter((h) => h.project_id !== id);
   }
 
   async getProject(projectId: string) {
@@ -629,6 +661,7 @@ export class InMemoryRepository implements Repository {
       status: "estimating",
       default_profit_pct: input.default_profit_pct ?? lastUsedProfitPct ?? 0,
       created_at: new Date().toISOString(),
+      is_active: true,
     };
     store.projects.push(created);
     return created;

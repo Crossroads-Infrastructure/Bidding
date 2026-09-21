@@ -1,19 +1,13 @@
-import Link from "next/link";
 import { getRepository } from "@/lib/repository";
 import { NewProjectForm } from "./new-project-form";
-import { DuplicateProjectButton } from "./duplicate-project-button";
-import type { ProjectStatus } from "@/types/domain";
-
-const STATUS_STYLES: Record<ProjectStatus, string> = {
-  estimating: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-  submitted: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-  won: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
-  lost: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
-};
+import { ProjectList } from "./project-list";
 
 export default async function DashboardPage() {
   const repository = getRepository();
-  const projects = await repository.listProjects();
+  const [projects, archivedProjects] = await Promise.all([
+    repository.listProjects(),
+    repository.listArchivedProjects(),
+  ]);
 
   return (
     <div>
@@ -27,35 +21,7 @@ export default async function DashboardPage() {
         <NewProjectForm />
       </div>
 
-      {projects.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-          No projects yet. Create one to start an estimate.
-        </p>
-      ) : (
-        <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-          {projects.map((project) => (
-            <li key={project.id} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
-              <Link href={`/projects/${project.id}`} className="min-w-0 flex-1">
-                <div className="font-medium">{project.project_name}</div>
-                <div className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {[project.client, project.location, project.dot_or_municipality]
-                    .filter(Boolean)
-                    .join(" · ") || "—"}
-                  {project.bid_date ? ` · Bid ${project.bid_date}` : ""}
-                </div>
-              </Link>
-              <div className="flex items-center gap-3">
-                <DuplicateProjectButton project={project} />
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_STYLES[project.status]}`}
-                >
-                  {project.status}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ProjectList projects={projects} archivedProjects={archivedProjects} />
     </div>
   );
 }

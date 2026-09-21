@@ -35,6 +35,23 @@ export async function createProjectAction(input: NewProjectInput) {
   return project;
 }
 
+export async function archiveProjectAction(id: string) {
+  const project = await getRepository().archiveProject(id);
+  revalidatePath("/");
+  return project;
+}
+
+export async function restoreProjectAction(id: string) {
+  const project = await getRepository().restoreProject(id);
+  revalidatePath("/");
+  return project;
+}
+
+export async function deleteProjectPermanentlyAction(id: string) {
+  await getRepository().deleteProjectPermanently(id);
+  revalidatePath("/");
+}
+
 export async function updateProjectStatusAction(
   projectId: string,
   status: "estimating" | "submitted" | "won" | "lost"

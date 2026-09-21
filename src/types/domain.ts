@@ -127,6 +127,9 @@ export interface Project {
   // company_defaults, not per-project fields.
   default_profit_pct: number;
   created_at: string;
+  // Archived projects are hidden from the dashboard's default view but
+  // never deleted automatically -- same pattern as the library entities.
+  is_active: boolean;
 }
 
 export interface ProjectLineItem {

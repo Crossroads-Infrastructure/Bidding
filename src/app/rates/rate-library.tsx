@@ -884,6 +884,7 @@ function CrewGroupsTab({
             </div>
             <button
               onClick={async () => {
+                if (!window.confirm(`Delete crew group "${group.group_name}"? This cannot be undone.`)) return;
                 setLocalGroups((gs) => gs.filter((g) => g.id !== group.id));
                 await deleteCrewGroupAction(group.id);
               }}
@@ -1035,6 +1036,7 @@ function EquipmentGroupsTab({
             </div>
             <button
               onClick={async () => {
+                if (!window.confirm(`Delete equipment group "${group.group_name}"? This cannot be undone.`)) return;
                 setLocalGroups((gs) => gs.filter((g) => g.id !== group.id));
                 await deleteEquipmentGroupAction(group.id);
               }}

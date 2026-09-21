@@ -220,6 +220,10 @@ export interface Repository {
 
   // Projects
   listProjects(): Promise<Project[]>;
+  listArchivedProjects(): Promise<Project[]>;
+  archiveProject(id: string): Promise<Project>;
+  restoreProject(id: string): Promise<Project>;
+  deleteProjectPermanently(id: string): Promise<void>;
   getProject(projectId: string): Promise<Project | undefined>;
   createProject(input: NewProjectInput): Promise<Project>;
   duplicateProject(sourceProjectId: string, details: DuplicateProjectDetailsInput): Promise<Project>;

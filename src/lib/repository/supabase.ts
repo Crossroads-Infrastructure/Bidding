@@ -824,10 +824,50 @@ export class SupabaseRepository implements Repository {
   async listProjects() {
     return coerceNumericList(
       unwrap<Project[]>(
-        await this.client.from("projects").select("*").order("created_at", { ascending: false })
+        await this.client
+          .from("projects")
+          .select("*")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false })
       ),
       PROJECT_NUMERIC_FIELDS
     );
+  }
+
+  async listArchivedProjects() {
+    return coerceNumericList(
+      unwrap<Project[]>(
+        await this.client
+          .from("projects")
+          .select("*")
+          .eq("is_active", false)
+          .order("created_at", { ascending: false })
+      ),
+      PROJECT_NUMERIC_FIELDS
+    );
+  }
+
+  async archiveProject(id: string) {
+    return coerceNumeric(
+      unwrap<Project>(
+        await this.client.from("projects").update({ is_active: false }).eq("id", id).select().single()
+      ),
+      PROJECT_NUMERIC_FIELDS
+    );
+  }
+
+  async restoreProject(id: string) {
+    return coerceNumeric(
+      unwrap<Project>(
+        await this.client.from("projects").update({ is_active: true }).eq("id", id).select().single()
+      ),
+      PROJECT_NUMERIC_FIELDS
+    );
+  }
+
+  async deleteProjectPermanently(id: string) {
+    const { error } = await this.client.from("projects").delete().eq("id", id);
+    if (error) throw new Error(error.message);
   }
 
   async getProject(projectId: string) {
