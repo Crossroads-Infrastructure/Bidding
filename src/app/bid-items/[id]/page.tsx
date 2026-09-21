@@ -13,11 +13,22 @@ export default async function BidItemDetailPage({
   const recipe = await repository.getBidItemRecipe(id);
   if (!recipe) notFound();
 
-  const [crewRates, equipmentRates, materials] = await Promise.all([
+  const [crewRates, equipmentRates, materials, crewGroups, equipmentGroups] = await Promise.all([
     repository.listCrewRates(),
     repository.listEquipmentRates(),
     repository.listMaterials(),
+    repository.listCrewGroups(),
+    repository.listEquipmentGroups(),
   ]);
+
+  const crewGroupMembersByGroup = Object.fromEntries(
+    await Promise.all(crewGroups.map(async (g) => [g.id, await repository.listCrewGroupMembers(g.id)] as const))
+  );
+  const equipmentGroupMembersByGroup = Object.fromEntries(
+    await Promise.all(
+      equipmentGroups.map(async (g) => [g.id, await repository.listEquipmentGroupMembers(g.id)] as const)
+    )
+  );
 
   const { item, labor, equipment, materials: itemMaterials } = recipe;
 
@@ -42,6 +53,10 @@ export default async function BidItemDetailPage({
         crewRates={crewRates}
         equipmentRates={equipmentRates}
         materialsCatalog={materials}
+        crewGroups={crewGroups}
+        crewGroupMembersByGroup={crewGroupMembersByGroup}
+        equipmentGroups={equipmentGroups}
+        equipmentGroupMembersByGroup={equipmentGroupMembersByGroup}
       />
 
       {item.notes && (

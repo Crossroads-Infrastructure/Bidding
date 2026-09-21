@@ -24,6 +24,7 @@ import {
   updateBidItemEquipmentRowAction,
   updateBidItemLaborRowAction,
 } from "../../actions";
+import { UnitRateInput } from "../../unit-rate-input";
 
 type OverrideMap<T> = Map<string, T>;
 
@@ -624,13 +625,7 @@ function AddLaborRow({
           </option>
         ))}
       </select>
-      <input
-        type="number"
-        placeholder="hrs/unit"
-        value={hoursPerUnit}
-        onChange={(e) => setHoursPerUnit(e.target.value)}
-        className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-      />
+      <UnitRateInput perUnitLabel="hrs/unit" rateLabel="units/hr" value={hoursPerUnit} onChange={setHoursPerUnit} widthClassName="w-20" />
       <input
         type="number"
         placeholder="headcount"
@@ -694,13 +689,7 @@ function AddEquipmentRow({
           </option>
         ))}
       </select>
-      <input
-        type="number"
-        placeholder="hrs/unit"
-        value={hoursPerUnit}
-        onChange={(e) => setHoursPerUnit(e.target.value)}
-        className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-      />
+      <UnitRateInput perUnitLabel="hrs/unit" rateLabel="units/hr" value={hoursPerUnit} onChange={setHoursPerUnit} widthClassName="w-20" />
       <button
         disabled={!equipmentId || !hoursPerUnit}
         onClick={async () => {
@@ -756,13 +745,7 @@ function AddMaterialRow({
           </option>
         ))}
       </select>
-      <input
-        type="number"
-        placeholder="qty/unit"
-        value={qtyPerUnit}
-        onChange={(e) => setQtyPerUnit(e.target.value)}
-        className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-      />
+      <UnitRateInput perUnitLabel="qty/unit" rateLabel="units/qty" value={qtyPerUnit} onChange={setQtyPerUnit} widthClassName="w-24" />
       <span className="text-zinc-400">fixed ratio</span>
       <button
         disabled={!materialId || !qtyPerUnit}

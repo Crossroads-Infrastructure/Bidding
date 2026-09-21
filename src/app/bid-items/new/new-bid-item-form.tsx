@@ -16,6 +16,7 @@ import type {
   MaterialOutputUnit,
 } from "@/types/domain";
 import { createBidItemAction } from "../../actions";
+import { UnitRateInput } from "../../unit-rate-input";
 
 const UNITS: BidItemUnit[] = ["SF", "LF", "EA", "SY", "LS", "CY", "TON", "GAL", "ACR", "DAY", "LB", "MHR"];
 const ITEM_TYPES: BidItemType[] = ["unit_price", "lump_sum", "sub_quote"];
@@ -194,11 +195,16 @@ export function NewBidItemForm({
                   onChange={(v) => updateRow(setLaborRows, idx, { crew_role_id: v })}
                   options={crewRates.map((c) => ({ value: c.id, label: c.role_name }))}
                 />
-                <NumberField
-                  label="Hours / unit"
-                  value={row.hours_per_unit}
-                  onChange={(v) => updateRow(setLaborRows, idx, { hours_per_unit: v })}
-                />
+                <label className="flex flex-col text-xs text-zinc-500">
+                  Hours / unit
+                  <UnitRateInput
+                    perUnitLabel="hrs/unit"
+                    rateLabel="units/hr"
+                    value={row.hours_per_unit}
+                    onChange={(v) => updateRow(setLaborRows, idx, { hours_per_unit: v })}
+                    widthClassName="w-28"
+                  />
+                </label>
                 <NumberField
                   label="Headcount"
                   value={row.headcount}
@@ -231,11 +237,16 @@ export function NewBidItemForm({
                   onChange={(v) => updateRow(setEquipmentRows, idx, { equipment_id: v })}
                   options={equipmentRates.map((e) => ({ value: e.id, label: e.equipment_name }))}
                 />
-                <NumberField
-                  label="Hours / unit"
-                  value={row.hours_per_unit}
-                  onChange={(v) => updateRow(setEquipmentRows, idx, { hours_per_unit: v })}
-                />
+                <label className="flex flex-col text-xs text-zinc-500">
+                  Hours / unit
+                  <UnitRateInput
+                    perUnitLabel="hrs/unit"
+                    rateLabel="units/hr"
+                    value={row.hours_per_unit}
+                    onChange={(v) => updateRow(setEquipmentRows, idx, { hours_per_unit: v })}
+                    widthClassName="w-28"
+                  />
+                </label>
                 <RemoveButton onClick={() => removeRow(setEquipmentRows, idx)} />
               </div>
             ))}
@@ -265,11 +276,16 @@ export function NewBidItemForm({
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   {row.calc_method === "fixed_ratio" && (
-                    <NumberField
-                      label="Qty per unit"
-                      value={row.qty_per_unit}
-                      onChange={(v) => updateRow(setMaterialRows, idx, { qty_per_unit: v })}
-                    />
+                    <label className="flex flex-col text-xs text-zinc-500">
+                      Qty per unit
+                      <UnitRateInput
+                        perUnitLabel="qty/unit"
+                        rateLabel="units/qty"
+                        value={row.qty_per_unit}
+                        onChange={(v) => updateRow(setMaterialRows, idx, { qty_per_unit: v })}
+                        widthClassName="w-28"
+                      />
+                    </label>
                   )}
                   {row.calc_method === "liquid_application" && (
                     <NumberField
@@ -479,7 +495,16 @@ function PopulateFromCrewGroup({
         onChange={setGroupId}
         options={crewGroups.map((g) => ({ value: g.id, label: g.group_name }))}
       />
-      <NumberField label="Hours / unit (shared)" value={hoursPerUnit} onChange={setHoursPerUnit} />
+      <label className="flex flex-col text-xs text-zinc-500">
+        Hours / unit (shared)
+        <UnitRateInput
+          perUnitLabel="hrs/unit"
+          rateLabel="units/hr"
+          value={hoursPerUnit}
+          onChange={setHoursPerUnit}
+          widthClassName="w-28"
+        />
+      </label>
       <button
         type="button"
         disabled={!groupId || !hoursPerUnit}
@@ -524,7 +549,16 @@ function PopulateFromEquipmentGroup({
         onChange={setGroupId}
         options={equipmentGroups.map((g) => ({ value: g.id, label: g.group_name }))}
       />
-      <NumberField label="Hours / unit (shared)" value={hoursPerUnit} onChange={setHoursPerUnit} />
+      <label className="flex flex-col text-xs text-zinc-500">
+        Hours / unit (shared)
+        <UnitRateInput
+          perUnitLabel="hrs/unit"
+          rateLabel="units/hr"
+          value={hoursPerUnit}
+          onChange={setHoursPerUnit}
+          widthClassName="w-28"
+        />
+      </label>
       <button
         type="button"
         disabled={!groupId || !hoursPerUnit}

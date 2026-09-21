@@ -1,7 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import type { BidItemEquipment, BidItemLabor, BidItemMaterial, CrewRate, EquipmentRate, Material } from "@/types/domain";
+import type {
+  BidItemEquipment,
+  BidItemLabor,
+  BidItemMaterial,
+  CrewGroup,
+  CrewGroupMember,
+  CrewRate,
+  EquipmentGroup,
+  EquipmentGroupMember,
+  EquipmentRate,
+  Material,
+} from "@/types/domain";
 import {
   addBidItemEquipmentRowAction,
   addBidItemLaborRowAction,
@@ -12,6 +23,7 @@ import {
   updateBidItemEquipmentRowAction,
   updateBidItemLaborRowAction,
 } from "../../actions";
+import { UnitRateInput } from "../../unit-rate-input";
 
 // Bid Item Library's own recipe editor -- lets you add/remove labor,
 // equipment, and material rows on an EXISTING item. This is distinct from
@@ -27,6 +39,10 @@ export function RecipeEditor({
   crewRates,
   equipmentRates,
   materialsCatalog,
+  crewGroups,
+  crewGroupMembersByGroup,
+  equipmentGroups,
+  equipmentGroupMembersByGroup,
 }: {
   bidItemId: string;
   labor: BidItemLabor[];
@@ -35,6 +51,10 @@ export function RecipeEditor({
   crewRates: CrewRate[];
   equipmentRates: EquipmentRate[];
   materialsCatalog: Material[];
+  crewGroups: CrewGroup[];
+  crewGroupMembersByGroup: Record<string, CrewGroupMember[]>;
+  equipmentGroups: EquipmentGroup[];
+  equipmentGroupMembersByGroup: Record<string, EquipmentGroupMember[]>;
 }) {
   const [localLabor, setLocalLabor] = useState(labor);
   const [localEquipment, setLocalEquipment] = useState(equipment);
@@ -107,6 +127,17 @@ export function RecipeEditor({
             )}
           </tbody>
         </table>
+        {crewGroups.length > 0 && (
+          <div className="mt-3">
+            <PopulateFromCrewGroup
+              bidItemId={bidItemId}
+              crewGroups={crewGroups}
+              crewGroupMembersByGroup={crewGroupMembersByGroup}
+              crewRates={crewRates}
+              onPopulated={(rows) => setLocalLabor((r) => [...r, ...rows])}
+            />
+          </div>
+        )}
         <div className="mt-3 text-sm">
           <AddLaborRow bidItemId={bidItemId} crewRates={crewRates} onAdded={(row) => setLocalLabor((r) => [...r, row])} />
         </div>
@@ -160,6 +191,16 @@ export function RecipeEditor({
             )}
           </tbody>
         </table>
+        {equipmentGroups.length > 0 && (
+          <div className="mt-3">
+            <PopulateFromEquipmentGroup
+              bidItemId={bidItemId}
+              equipmentGroups={equipmentGroups}
+              equipmentGroupMembersByGroup={equipmentGroupMembersByGroup}
+              onPopulated={(rows) => setLocalEquipment((r) => [...r, ...rows])}
+            />
+          </div>
+        )}
         <div className="mt-3 text-sm">
           <AddEquipmentRow
             bidItemId={bidItemId}
@@ -245,6 +286,154 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// Group selection is a one-time population shortcut: it copies member
+// roles/equipment into normal labor/equipment rows at their default
+// headcounts with one shared hours/unit, then each row is independently
+// editable. No link back to the group is persisted, so editing or
+// deleting the group later never affects items already populated from it
+// (same behavior as the "+ New Bid Item" creation form's shortcut).
+function PopulateFromCrewGroup({
+  bidItemId,
+  crewGroups,
+  crewGroupMembersByGroup,
+  crewRates,
+  onPopulated,
+}: {
+  bidItemId: string;
+  crewGroups: CrewGroup[];
+  crewGroupMembersByGroup: Record<string, CrewGroupMember[]>;
+  crewRates: CrewRate[];
+  onPopulated: (rows: BidItemLabor[]) => void;
+}) {
+  const [groupId, setGroupId] = useState("");
+  const [hoursPerUnit, setHoursPerUnit] = useState("");
+  const [pending, setPending] = useState(false);
+  const crewById = new Map(crewRates.map((c) => [c.id, c]));
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded border border-dashed border-zinc-300 p-2 text-xs dark:border-zinc-700">
+      <label className="flex flex-col text-zinc-500">
+        Populate from crew group
+        <select
+          value={groupId}
+          onChange={(e) => setGroupId(e.target.value)}
+          className="w-44 rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+        >
+          <option value="">Select…</option>
+          {crewGroups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.group_name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col text-zinc-500">
+        Hours / unit (shared)
+        <UnitRateInput
+          perUnitLabel="hrs/unit"
+          rateLabel="units/hr"
+          value={hoursPerUnit}
+          onChange={setHoursPerUnit}
+          widthClassName="w-24"
+        />
+      </label>
+      <button
+        type="button"
+        disabled={!groupId || !hoursPerUnit || pending}
+        onClick={async () => {
+          const members = (crewGroupMembersByGroup[groupId] ?? []).filter((m) => crewById.has(m.crew_role_id));
+          setPending(true);
+          const created = await Promise.all(
+            members.map((m) =>
+              addBidItemLaborRowAction(bidItemId, {
+                crew_role_id: m.crew_role_id,
+                hours_per_unit: Number(hoursPerUnit),
+                headcount: m.default_headcount,
+              })
+            )
+          );
+          onPopulated(created);
+          setGroupId("");
+          setHoursPerUnit("");
+          setPending(false);
+        }}
+        className="rounded bg-zinc-900 px-3 py-1.5 font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+      >
+        {pending ? "Populating…" : "Populate"}
+      </button>
+    </div>
+  );
+}
+
+function PopulateFromEquipmentGroup({
+  bidItemId,
+  equipmentGroups,
+  equipmentGroupMembersByGroup,
+  onPopulated,
+}: {
+  bidItemId: string;
+  equipmentGroups: EquipmentGroup[];
+  equipmentGroupMembersByGroup: Record<string, EquipmentGroupMember[]>;
+  onPopulated: (rows: BidItemEquipment[]) => void;
+}) {
+  const [groupId, setGroupId] = useState("");
+  const [hoursPerUnit, setHoursPerUnit] = useState("");
+  const [pending, setPending] = useState(false);
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded border border-dashed border-zinc-300 p-2 text-xs dark:border-zinc-700">
+      <label className="flex flex-col text-zinc-500">
+        Populate from equipment group
+        <select
+          value={groupId}
+          onChange={(e) => setGroupId(e.target.value)}
+          className="w-44 rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+        >
+          <option value="">Select…</option>
+          {equipmentGroups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.group_name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col text-zinc-500">
+        Hours / unit (shared)
+        <UnitRateInput
+          perUnitLabel="hrs/unit"
+          rateLabel="units/hr"
+          value={hoursPerUnit}
+          onChange={setHoursPerUnit}
+          widthClassName="w-24"
+        />
+      </label>
+      <button
+        type="button"
+        disabled={!groupId || !hoursPerUnit || pending}
+        onClick={async () => {
+          const members = equipmentGroupMembersByGroup[groupId] ?? [];
+          setPending(true);
+          const created = await Promise.all(
+            members.map((m) =>
+              addBidItemEquipmentRowAction(bidItemId, {
+                equipment_id: m.equipment_id,
+                hours_per_unit: Number(hoursPerUnit),
+              })
+            )
+          );
+          onPopulated(created);
+          setGroupId("");
+          setHoursPerUnit("");
+          setPending(false);
+        }}
+        className="rounded bg-zinc-900 px-3 py-1.5 font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+      >
+        {pending ? "Populating…" : "Populate"}
+      </button>
+    </div>
+  );
+}
+
 function AddLaborRow({
   bidItemId,
   crewRates,
@@ -281,14 +470,7 @@ function AddLaborRow({
           </option>
         ))}
       </select>
-      <input
-        type="number"
-        step="0.01"
-        placeholder="hrs/unit"
-        value={hoursPerUnit}
-        onChange={(e) => setHoursPerUnit(e.target.value)}
-        className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-      />
+      <UnitRateInput perUnitLabel="hrs/unit" rateLabel="units/hr" value={hoursPerUnit} onChange={setHoursPerUnit} widthClassName="w-20" />
       <input
         type="number"
         placeholder="headcount"
@@ -356,14 +538,7 @@ function AddEquipmentRow({
           </option>
         ))}
       </select>
-      <input
-        type="number"
-        step="0.01"
-        placeholder="hrs/unit"
-        value={hoursPerUnit}
-        onChange={(e) => setHoursPerUnit(e.target.value)}
-        className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-      />
+      <UnitRateInput perUnitLabel="hrs/unit" rateLabel="units/hr" value={hoursPerUnit} onChange={setHoursPerUnit} widthClassName="w-20" />
       <button
         disabled={!equipmentId || !hoursPerUnit}
         onClick={async () => {
@@ -425,15 +600,7 @@ function AddMaterialRow({
           </option>
         ))}
       </select>
-      <input
-        type="number"
-        step="0.0001"
-        placeholder="qty/unit"
-        value={qtyPerUnit}
-        onChange={(e) => setQtyPerUnit(e.target.value)}
-        className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-      />
-      <span className="text-zinc-400">fixed ratio</span>
+      <UnitRateInput perUnitLabel="qty/unit" rateLabel="units/qty" value={qtyPerUnit} onChange={setQtyPerUnit} widthClassName="w-24" />
       <button
         disabled={!materialId || !qtyPerUnit}
         onClick={async () => {
