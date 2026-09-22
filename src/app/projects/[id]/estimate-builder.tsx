@@ -323,7 +323,9 @@ export function EstimateBuilder({
               <th className="px-4 py-2 font-medium">Item</th>
               <th className="px-4 py-2 font-medium">Qty</th>
               <th className="px-4 py-2 font-medium">Unit price (pre-profit)</th>
-              <th className="px-4 py-2 font-medium">Rounded rate</th>
+              <th className="px-4 py-2 font-medium" title="Uses the project's last-used profit % -- set the real bid price on Review & Quote">
+                Preview (w/ profit)
+              </th>
               <th className="px-4 py-2 font-medium">Total</th>
               <th className="px-4 py-2" />
             </tr>
@@ -354,10 +356,6 @@ export function EstimateBuilder({
                   onRemove={() => handleRemove(line.id)}
                   onQuantityChange={(q) => patchLineLocal(line.id, { quantity: q })}
                   onQuantityCommit={(q) => updateProjectLineItemAction(line.id, project.id, { quantity: q })}
-                  onRoundedRateChange={(rate) => patchLineLocal(line.id, { manual_rounded_rate: rate })}
-                  onRoundedRateCommit={(rate) =>
-                    updateProjectLineItemAction(line.id, project.id, { manual_rounded_rate: rate })
-                  }
                   onFieldChange={(patch) => patchLineLocal(line.id, patch)}
                   onFieldCommit={(patch) => updateProjectLineItemAction(line.id, project.id, patch)}
                   onMaterialOverrideChange={(materialId, patch) =>

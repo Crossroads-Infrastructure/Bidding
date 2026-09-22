@@ -5,6 +5,7 @@ import type {
   BidItemMaterial,
   BidItemRecipe,
   CompanyDefaults,
+  CompanyProfile,
   CrewGroup,
   CrewGroupMember,
   CrewRate,
@@ -12,9 +13,12 @@ import type {
   EquipmentGroup,
   EquipmentGroupMember,
   EquipmentRate,
+  InclusionExclusionBankItem,
+  InclusionExclusionCategory,
   Material,
   Project,
   ProjectDocument,
+  ProjectInclusion,
   ProjectLineItem,
   ProjectLineItemEquipmentOverride,
   ProjectLineItemLaborOverride,
@@ -136,6 +140,20 @@ export interface NewProjectDocumentInput {
   file_size: number;
   content: Uint8Array;
 }
+
+export interface CompanyProfileInput {
+  company_name: string;
+  address_line1?: string | null;
+  city_state_zip?: string | null;
+  contact_name?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  certification_tagline?: string | null;
+  quote_validity_days?: number;
+}
+
+export type NewInclusionExclusionBankItemInput = { category: InclusionExclusionCategory; text: string };
+export type NewProjectInclusionInput = { category: InclusionExclusionCategory; text: string };
 
 /**
  * Data access boundary for the whole app. Two implementations exist:
@@ -274,4 +292,18 @@ export interface Repository {
   listProjectDocuments(projectId: string): Promise<ProjectDocument[]>;
   addProjectDocument(input: NewProjectDocumentInput): Promise<ProjectDocument>;
   removeProjectDocument(id: string): Promise<void>;
+
+  // Company profile (quote header)
+  getCompanyProfile(): Promise<CompanyProfile | undefined>;
+  upsertCompanyProfile(input: CompanyProfileInput): Promise<CompanyProfile>;
+
+  // Inclusion/exclusion bank + per-project copies
+  listInclusionBankItems(): Promise<InclusionExclusionBankItem[]>;
+  addInclusionBankItem(input: NewInclusionExclusionBankItemInput): Promise<InclusionExclusionBankItem>;
+  removeInclusionBankItem(id: string): Promise<void>;
+
+  listProjectInclusions(projectId: string): Promise<ProjectInclusion[]>;
+  addProjectInclusion(projectId: string, input: NewProjectInclusionInput): Promise<ProjectInclusion>;
+  updateProjectInclusion(id: string, text: string): Promise<ProjectInclusion>;
+  removeProjectInclusion(id: string): Promise<void>;
 }

@@ -8,10 +8,12 @@ import type {
   BidItemRecipe,
   BidItemUnit,
   CompanyDefaults,
+  CompanyProfile,
   CrewRate,
   EquipmentRate,
   Material,
   Project,
+  ProjectInclusion,
   ProjectLineItem,
   ProjectLineItemEquipmentOverride,
   ProjectLineItemLaborOverride,
@@ -34,10 +36,13 @@ interface QuoteRow {
 }
 
 // Client-facing only: pricing and quantities as the bid document should
-// read, matching the original spreadsheet's "Quote" tab. No labor/
-// equipment/material breakdown, and no distinction between self-performed
-// and subcontracted lines -- the client never sees who's doing the work,
-// only what it costs (round 3 #1, confirmed by round 4 #3).
+// read, matching the original spreadsheet's "Quote" tab and, as of round
+// 7, the layout of the company's real quote template (header block,
+// "Total Bid Price," Inclusions/Exclusions with Scope of Work + GC
+// Responsibility). No labor/equipment/material breakdown, and no
+// distinction between self-performed and subcontracted lines -- the
+// client never sees who's doing the work, only what it costs (round 3 #1,
+// confirmed by round 4 #3).
 export function QuoteView({
   project,
   lineItems,
@@ -50,6 +55,8 @@ export function QuoteView({
   laborOverridesByLine,
   equipmentOverridesByLine,
   vendorQuotesByLine,
+  companyProfile,
+  projectInclusions,
 }: {
   project: Project;
   lineItems: ProjectLineItem[];
@@ -62,6 +69,8 @@ export function QuoteView({
   laborOverridesByLine: Record<string, ProjectLineItemLaborOverride[]>;
   equipmentOverridesByLine: Record<string, ProjectLineItemEquipmentOverride[]>;
   vendorQuotesByLine: Record<string, ProjectLineItemVendorQuote[]>;
+  companyProfile: CompanyProfile | undefined;
+  projectInclusions: ProjectInclusion[];
 }) {
   const rateContext = useMemo(
     () => new RateContext(crewRates, equipmentRates, materials),
@@ -125,12 +134,48 @@ export function QuoteView({
     })
     .filter((r): r is QuoteRow => r !== null);
 
+  const scopeOfWork = projectInclusions.filter((i) => i.category === "scope_of_work");
+  const gcResponsibility = projectInclusions.filter((i) => i.category === "gc_responsibility");
+  const validityDays = companyProfile?.quote_validity_days ?? 30;
+  const bidTo = project.client || "Prime Contractor";
+
   function handleExportExcel() {
-    const header = ["Item #", "Item", "Description", "Qty", "Unit", "Unit Price", "Total"];
-    const body = rows.map((r) => [r.itemNumber, r.itemName, r.description, r.quantity, r.unit, r.unitPrice, r.total]);
-    const footer = ["", "", "", "", "", "Grand Total", estimate.grandTotal];
-    const ws = XLSX.utils.aoa_to_sheet([header, ...body, [], footer]);
-    ws["!cols"] = [{ wch: 10 }, { wch: 32 }, { wch: 40 }, { wch: 8 }, { wch: 8 }, { wch: 14 }, { wch: 14 }];
+    const rowsOut: (string | number)[][] = [];
+    rowsOut.push([`Quote for: ${project.project_name}`]);
+    if (companyProfile) {
+      rowsOut.push([companyProfile.company_name]);
+      if (companyProfile.address_line1) rowsOut.push([companyProfile.address_line1]);
+      if (companyProfile.city_state_zip) rowsOut.push([companyProfile.city_state_zip]);
+      rowsOut.push([]);
+      if (companyProfile.contact_name) rowsOut.push([`Contact: ${companyProfile.contact_name}`]);
+      if (companyProfile.contact_phone) rowsOut.push([`Cell: ${companyProfile.contact_phone}`]);
+      if (companyProfile.contact_email) rowsOut.push([`Email: ${companyProfile.contact_email}`]);
+    }
+    rowsOut.push([]);
+    rowsOut.push([`Bid Date: ${project.bid_date ?? "—"}`]);
+    rowsOut.push([`Quote is valid for ${validityDays} days`]);
+    rowsOut.push([`Bid to: ${bidTo}`]);
+    rowsOut.push([]);
+
+    const header = ["Item #", "Description", "Quantity", "Unit", "Rate", "Total"];
+    const body = rows.map((r) => [r.itemNumber, r.itemName, r.quantity, r.unit, r.unitPrice, r.total]);
+    rowsOut.push(header, ...body, [], ["", "", "", "", "Total Bid Price", estimate.grandTotal]);
+
+    if (scopeOfWork.length || gcResponsibility.length || companyProfile?.certification_tagline) {
+      rowsOut.push([], ["Inclusion/Exclusions:"]);
+      if (companyProfile?.certification_tagline) rowsOut.push([companyProfile.certification_tagline]);
+      if (scopeOfWork.length) {
+        rowsOut.push([], ["Scope of Work:"]);
+        scopeOfWork.forEach((i) => rowsOut.push([`- ${i.text}`]));
+      }
+      if (gcResponsibility.length) {
+        rowsOut.push([], ["General Contractor Responsibility:"]);
+        gcResponsibility.forEach((i) => rowsOut.push([`- ${i.text}`]));
+      }
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rowsOut);
+    ws["!cols"] = [{ wch: 10 }, { wch: 40 }, { wch: 10 }, { wch: 8 }, { wch: 14 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Quote");
     XLSX.writeFile(wb, `${project.project_name.replace(/[^\w-]+/g, "_")}-quote.xlsx`);
@@ -168,12 +213,30 @@ export function QuoteView({
         </div>
       </div>
 
-      <div className="mb-6 hidden print:block">
-        <h1 className="text-2xl font-semibold">{project.project_name}</h1>
-        <p className="text-sm text-zinc-600">
-          {[project.client, project.location, project.dot_or_municipality].filter(Boolean).join(" · ") || "—"}
-          {project.bid_date ? ` · Bid ${project.bid_date}` : ""}
-        </p>
+      {/* Quote header -- shown both on screen and when printed, matching the company's real quote template */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-6 border-b border-zinc-200 pb-4 dark:border-zinc-800 print:border-black">
+        <div>
+          <p className="text-lg font-semibold">Quote for: {project.project_name}</p>
+          {companyProfile && (
+            <>
+              <p className="mt-1 font-medium">{companyProfile.company_name}</p>
+              {companyProfile.address_line1 && (
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 print:text-black">{companyProfile.address_line1}</p>
+              )}
+              {companyProfile.city_state_zip && (
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 print:text-black">{companyProfile.city_state_zip}</p>
+              )}
+            </>
+          )}
+          <p className="mt-2 text-sm">Bid to: {bidTo}</p>
+        </div>
+        <div className="text-right text-sm">
+          {companyProfile?.contact_name && <p>Contact: {companyProfile.contact_name}</p>}
+          {companyProfile?.contact_phone && <p>Cell: {companyProfile.contact_phone}</p>}
+          {companyProfile?.contact_email && <p>Email: {companyProfile.contact_email}</p>}
+          <p className="mt-2">Bid Date: {project.bid_date ?? "—"}</p>
+          <p>Quote is valid for {validityDays} days</p>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 print:border-0">
@@ -181,10 +244,10 @@ export function QuoteView({
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400 print:bg-transparent">
             <tr>
               <th className="px-4 py-2 font-medium">Item #</th>
-              <th className="px-4 py-2 font-medium">Item</th>
-              <th className="px-4 py-2 font-medium">Qty</th>
+              <th className="px-4 py-2 font-medium">Description</th>
+              <th className="px-4 py-2 font-medium">Quantity</th>
               <th className="px-4 py-2 font-medium">Unit</th>
-              <th className="px-4 py-2 font-medium">Unit Price</th>
+              <th className="px-4 py-2 font-medium">Rate</th>
               <th className="px-4 py-2 font-medium">Total</th>
             </tr>
           </thead>
@@ -212,15 +275,45 @@ export function QuoteView({
               </tr>
             )}
           </tbody>
+          <tfoot>
+            <tr className="border-t border-zinc-200 dark:border-zinc-800">
+              <td colSpan={5} className="px-4 py-2 text-right font-semibold">
+                Total Bid Price
+              </td>
+              <td className="px-4 py-2 text-base font-semibold">{formatCurrency(estimate.grandTotal)}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
-      <div className="mt-6 ml-auto max-w-sm rounded-lg border border-zinc-200 bg-white p-4 text-base font-semibold dark:border-zinc-800 dark:bg-zinc-900 print:border-0">
-        <div className="flex justify-between">
-          <span>Total</span>
-          <span>{formatCurrency(estimate.grandTotal)}</span>
+      {(scopeOfWork.length > 0 || gcResponsibility.length > 0 || companyProfile?.certification_tagline) && (
+        <div className="mt-6 text-sm">
+          <p className="font-medium">Inclusion/Exclusions:</p>
+          {companyProfile?.certification_tagline && (
+            <p className="my-2 text-center text-lg font-bold">{companyProfile.certification_tagline}</p>
+          )}
+          {scopeOfWork.length > 0 && (
+            <div className="mt-3">
+              <p className="font-semibold">Scope of Work:</p>
+              <ul className="mt-1 list-none">
+                {scopeOfWork.map((i) => (
+                  <li key={i.id}>- {i.text}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {gcResponsibility.length > 0 && (
+            <div className="mt-3">
+              <p className="font-semibold">General Contractor Responsibility:</p>
+              <ul className="mt-1 list-none">
+                {gcResponsibility.map((i) => (
+                  <li key={i.id}>- {i.text}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

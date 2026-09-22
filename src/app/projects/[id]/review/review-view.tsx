@@ -13,15 +13,24 @@ import type {
   CompanyDefaults,
   CrewRate,
   EquipmentRate,
+  InclusionExclusionBankItem,
+  InclusionExclusionCategory,
   Material,
   Project,
+  ProjectInclusion,
   ProjectLineItem,
   ProjectLineItemEquipmentOverride,
   ProjectLineItemLaborOverride,
   ProjectLineItemMaterialOverride,
   ProjectLineItemVendorQuote,
 } from "@/types/domain";
-import { updateProjectLastUsedProfitAction, updateProjectLineItemAction } from "../../../actions";
+import {
+  addProjectInclusionAction,
+  removeProjectInclusionAction,
+  updateProjectInclusionAction,
+  updateProjectLastUsedProfitAction,
+  updateProjectLineItemAction,
+} from "../../../actions";
 
 type BidHistoryRow = { unit_price_bid: number; outcome: string | null; date: string };
 
@@ -48,6 +57,8 @@ export function ReviewView({
   equipmentOverridesByLine,
   vendorQuotesByLine,
   bidHistoryByBidItemId,
+  inclusionBankItems,
+  projectInclusions,
 }: {
   project: Project;
   lineItems: ProjectLineItem[];
@@ -61,6 +72,8 @@ export function ReviewView({
   equipmentOverridesByLine: Record<string, ProjectLineItemEquipmentOverride[]>;
   vendorQuotesByLine: Record<string, ProjectLineItemVendorQuote[]>;
   bidHistoryByBidItemId: Record<string, BidHistoryRow[]>;
+  inclusionBankItems: InclusionExclusionBankItem[];
+  projectInclusions: ProjectInclusion[];
 }) {
   const [liveProfitPct, setLiveProfitPct] = useState(project.default_profit_pct * 100);
   const [lineItemsState, setLineItemsState] = useState(lineItems);
@@ -164,6 +177,7 @@ export function ReviewView({
               <th className="px-4 py-2 font-medium">Item</th>
               <th className="px-4 py-2 font-medium">Qty</th>
               <th className="px-4 py-2 font-medium">Unit price</th>
+              <th className="px-4 py-2 font-medium">Rounded rate (bid price)</th>
               <th className="px-4 py-2 font-medium">Total</th>
               <th className="px-4 py-2" />
             </tr>
@@ -189,6 +203,7 @@ export function ReviewView({
                   range={range}
                   onToggleExpand={() => setExpandedLine(expanded ? null : line.id)}
                   onProfitOverrideChange={(v) => patchLine(line.id, { override_profit_pct: v })}
+                  onRoundedRateChange={(v) => patchLine(line.id, { manual_rounded_rate: v })}
                 />
               );
             })}
@@ -226,6 +241,163 @@ export function ReviewView({
           <span>{formatCurrency(estimate.grandTotal)}</span>
         </div>
       </div>
+
+      <InclusionsEditor projectId={project.id} bankItems={inclusionBankItems} projectInclusions={projectInclusions} />
+    </div>
+  );
+}
+
+const CATEGORY_LABEL: Record<InclusionExclusionCategory, string> = {
+  scope_of_work: "Scope of Work",
+  gc_responsibility: "General Contractor Responsibility",
+};
+
+// Fills in "before we get to the final quote screen i need somewhere to
+// enter inclusion/exclusions" -- both sections that show up on the Quote
+// screen's footer. "Add from bank" copies a saved snippet's text into a
+// fresh, independently-editable line (same shortcut pattern as crew/
+// equipment groups); nothing here is a live link back to the bank, so
+// editing wording here never touches the shared bank entry.
+function InclusionsEditor({
+  projectId,
+  bankItems,
+  projectInclusions,
+}: {
+  projectId: string;
+  bankItems: InclusionExclusionBankItem[];
+  projectInclusions: ProjectInclusion[];
+}) {
+  const [items, setItems] = useState(projectInclusions);
+
+  return (
+    <div className="mt-6 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        Inclusions / Exclusions
+      </h2>
+      <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
+        Shown on the Quote screen. Pull from the bank as a starting point, then edit freely -- this is
+        this job&apos;s wording, not the bank&apos;s.
+      </p>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {(["scope_of_work", "gc_responsibility"] as const).map((category) => (
+          <InclusionCategoryList
+            key={category}
+            category={category}
+            projectId={projectId}
+            bankItems={bankItems.filter((b) => b.category === category)}
+            rows={items.filter((i) => i.category === category)}
+            onAdded={(row) => setItems((rows) => [...rows, row])}
+            onUpdated={(id, text) => setItems((rows) => rows.map((r) => (r.id === id ? { ...r, text } : r)))}
+            onRemoved={(id) => setItems((rows) => rows.filter((r) => r.id !== id))}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InclusionCategoryList({
+  category,
+  projectId,
+  bankItems,
+  rows,
+  onAdded,
+  onUpdated,
+  onRemoved,
+}: {
+  category: InclusionExclusionCategory;
+  projectId: string;
+  bankItems: InclusionExclusionBankItem[];
+  rows: ProjectInclusion[];
+  onAdded: (row: ProjectInclusion) => void;
+  onUpdated: (id: string, text: string) => void;
+  onRemoved: (id: string) => void;
+}) {
+  const [bankSelection, setBankSelection] = useState("");
+  const [customText, setCustomText] = useState("");
+
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        {CATEGORY_LABEL[category]}
+      </h3>
+      <ul className="mb-2 flex flex-col gap-1.5">
+        {rows.map((row) => (
+          <li key={row.id} className="flex items-start gap-2 text-sm">
+            <span className="mt-1.5 text-zinc-400">–</span>
+            <textarea
+              defaultValue={row.text}
+              rows={1}
+              onBlur={async (e) => {
+                if (e.target.value === row.text) return;
+                onUpdated(row.id, e.target.value);
+                await updateProjectInclusionAction(row.id, projectId, e.target.value);
+              }}
+              className="min-w-0 flex-1 resize-y rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+            />
+            <button
+              onClick={async () => {
+                onRemoved(row.id);
+                await removeProjectInclusionAction(row.id, projectId);
+              }}
+              className="mt-1 text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+        {rows.length === 0 && <li className="text-sm text-zinc-500 dark:text-zinc-400">Nothing entered yet.</li>}
+      </ul>
+      <div className="flex flex-wrap items-end gap-2 text-xs">
+        {bankItems.length > 0 && (
+          <>
+            <select
+              value={bankSelection}
+              onChange={(e) => setBankSelection(e.target.value)}
+              className="max-w-[14rem] rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+            >
+              <option value="">Add from bank…</option>
+              {bankItems.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.text.length > 60 ? `${b.text.slice(0, 60)}…` : b.text}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={!bankSelection}
+              onClick={async () => {
+                const bankItem = bankItems.find((b) => b.id === bankSelection);
+                if (!bankItem) return;
+                const row = await addProjectInclusionAction(projectId, { category, text: bankItem.text });
+                onAdded(row);
+                setBankSelection("");
+              }}
+              className="rounded bg-zinc-900 px-3 py-1.5 font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+            >
+              Add
+            </button>
+          </>
+        )}
+      </div>
+      <div className="mt-2 flex items-end gap-2 text-xs">
+        <input
+          placeholder="Custom line…"
+          value={customText}
+          onChange={(e) => setCustomText(e.target.value)}
+          className="min-w-0 flex-1 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+        />
+        <button
+          disabled={!customText.trim()}
+          onClick={async () => {
+            const row = await addProjectInclusionAction(projectId, { category, text: customText.trim() });
+            onAdded(row);
+            setCustomText("");
+          }}
+          className="rounded border border-zinc-300 px-3 py-1.5 font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          + Add custom
+        </button>
+      </div>
     </div>
   );
 }
@@ -239,6 +411,7 @@ function ReviewLineRow({
   range,
   onToggleExpand,
   onProfitOverrideChange,
+  onRoundedRateChange,
 }: {
   line: ProjectLineItem;
   recipe: BidItemRecipe;
@@ -248,6 +421,7 @@ function ReviewLineRow({
   range: { min: number; max: number } | null;
   onToggleExpand: () => void;
   onProfitOverrideChange: (v: number | null) => void;
+  onRoundedRateChange: (v: number | null) => void;
 }) {
   const displayName = line.item_name_override || recipe.item.item_name;
 
@@ -276,6 +450,16 @@ function ReviewLineRow({
         </td>
         <td className="px-4 py-2">{line.quantity}</td>
         <td className="px-4 py-2">{formatCurrency(estimate.rawUnitPrice)}</td>
+        <td className="px-4 py-2">
+          <input
+            type="number"
+            step="0.01"
+            placeholder={estimate.rawUnitPrice.toFixed(2)}
+            defaultValue={line.manual_rounded_rate ?? ""}
+            onBlur={(e) => onRoundedRateChange(e.target.value === "" ? null : Number(e.target.value))}
+            className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+        </td>
         <td className="px-4 py-2 font-medium">{formatCurrency(estimate.finalTotal)}</td>
         <td className="px-4 py-2 text-right">
           <button onClick={onToggleExpand} className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
@@ -285,7 +469,7 @@ function ReviewLineRow({
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={5} className="bg-zinc-50 px-4 py-3 dark:bg-zinc-800/40">
+          <td colSpan={6} className="bg-zinc-50 px-4 py-3 dark:bg-zinc-800/40">
             {!estimate.isSubcontracted && (
               <label className="mb-3 flex w-40 flex-col text-xs text-zinc-500">
                 Profit override % (this item)

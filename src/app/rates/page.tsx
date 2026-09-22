@@ -10,6 +10,8 @@ export default async function RatesPage() {
     companyDefaults,
     crewGroups,
     equipmentGroups,
+    companyProfile,
+    inclusionBankItems,
   ] = await Promise.all([
     repository.listCrewRates(),
     repository.listEquipmentRates(),
@@ -17,6 +19,8 @@ export default async function RatesPage() {
     repository.getCurrentCompanyDefaults(),
     repository.listCrewGroups(),
     repository.listEquipmentGroups(),
+    repository.getCompanyProfile(),
+    repository.listInclusionBankItems(),
   ]);
 
   const crewGroupMembersByGroup = Object.fromEntries(
@@ -45,6 +49,8 @@ export default async function RatesPage() {
         crewGroupMembersByGroup={crewGroupMembersByGroup}
         equipmentGroups={equipmentGroups}
         equipmentGroupMembersByGroup={equipmentGroupMembersByGroup}
+        companyProfile={companyProfile}
+        inclusionBankItems={inclusionBankItems}
       />
     </div>
   );

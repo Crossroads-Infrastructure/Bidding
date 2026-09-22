@@ -6,15 +6,18 @@ import type {
   BidItemMaterial,
   BidItemRecipe,
   CompanyDefaults,
+  CompanyProfile,
   CrewGroup,
   CrewGroupMember,
   CrewRate,
   EquipmentGroup,
   EquipmentGroupMember,
   EquipmentRate,
+  InclusionExclusionBankItem,
   Material,
   Project,
   ProjectDocument,
+  ProjectInclusion,
   ProjectLineItem,
   ProjectLineItemEquipmentOverride,
   ProjectLineItemLaborOverride,
@@ -25,6 +28,7 @@ import type {
   BidItemEquipmentRowUpdate,
   BidItemLaborRowUpdate,
   BidItemMaterialRowUpdate,
+  CompanyProfileInput,
   DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
   LaborOverrideInput,
@@ -39,8 +43,10 @@ import type {
   NewEquipmentGroupInput,
   NewEquipmentGroupMemberInput,
   NewEquipmentRateInput,
+  NewInclusionExclusionBankItemInput,
   NewMaterialInput,
   NewProjectDocumentInput,
+  NewProjectInclusionInput,
   NewProjectInput,
   NewProjectLineItemInput,
   NewVendorQuoteInput,
@@ -1371,6 +1377,109 @@ export class SupabaseRepository implements Repository {
 
   async removeProjectDocument(id: string) {
     const { error } = await this.client.from("project_documents").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  }
+
+  // ---------------- Company profile ----------------
+
+  async getCompanyProfile() {
+    const { data, error } = await this.client.from("company_profile").select("*").limit(1).maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as CompanyProfile | null) ?? undefined;
+  }
+
+  async upsertCompanyProfile(input: CompanyProfileInput) {
+    const existing = await this.getCompanyProfile();
+    if (existing) {
+      return unwrap<CompanyProfile>(
+        await this.client
+          .from("company_profile")
+          .update({ ...input, updated_at: new Date().toISOString() })
+          .eq("id", existing.id)
+          .select()
+          .single()
+      );
+    }
+    return unwrap<CompanyProfile>(
+      await this.client.from("company_profile").insert(input).select().single()
+    );
+  }
+
+  // ---------------- Inclusion/exclusion bank + per-project copies ----------------
+
+  async listInclusionBankItems() {
+    return unwrap<InclusionExclusionBankItem[]>(
+      await this.client
+        .from("inclusion_exclusion_items")
+        .select("*")
+        .order("category")
+        .order("sort_order")
+    );
+  }
+
+  async addInclusionBankItem(input: NewInclusionExclusionBankItemInput) {
+    const existing = unwrap<Pick<InclusionExclusionBankItem, "sort_order">[]>(
+      await this.client
+        .from("inclusion_exclusion_items")
+        .select("sort_order")
+        .eq("category", input.category)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+    );
+    const nextSort = existing.length ? existing[0].sort_order + 1 : 0;
+    return unwrap<InclusionExclusionBankItem>(
+      await this.client
+        .from("inclusion_exclusion_items")
+        .insert({ ...input, sort_order: nextSort })
+        .select()
+        .single()
+    );
+  }
+
+  async removeInclusionBankItem(id: string) {
+    const { error } = await this.client.from("inclusion_exclusion_items").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  }
+
+  async listProjectInclusions(projectId: string) {
+    return unwrap<ProjectInclusion[]>(
+      await this.client
+        .from("project_inclusions")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("category")
+        .order("sort_order")
+    );
+  }
+
+  async addProjectInclusion(projectId: string, input: NewProjectInclusionInput) {
+    const existing = unwrap<Pick<ProjectInclusion, "sort_order">[]>(
+      await this.client
+        .from("project_inclusions")
+        .select("sort_order")
+        .eq("project_id", projectId)
+        .eq("category", input.category)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+    );
+    const nextSort = existing.length ? existing[0].sort_order + 1 : 0;
+    return unwrap<ProjectInclusion>(
+      await this.client
+        .from("project_inclusions")
+        .insert({ project_id: projectId, ...input, sort_order: nextSort })
+        .select()
+        .single()
+    );
+  }
+
+  async updateProjectInclusion(id: string, text: string) {
+    return unwrap<ProjectInclusion>(
+      await this.client.from("project_inclusions").update({ text }).eq("id", id).select().single()
+    );
+  }
+
+  async removeProjectInclusion(id: string) {
+    const { error } = await this.client.from("project_inclusions").delete().eq("id", id);
     if (error) throw new Error(error.message);
   }
 }

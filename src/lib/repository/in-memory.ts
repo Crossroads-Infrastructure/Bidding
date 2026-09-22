@@ -7,15 +7,18 @@ import type {
   BidItemMaterial,
   BidItemRecipe,
   CompanyDefaults,
+  CompanyProfile,
   CrewGroup,
   CrewGroupMember,
   CrewRate,
   EquipmentGroup,
   EquipmentGroupMember,
   EquipmentRate,
+  InclusionExclusionBankItem,
   Material,
   Project,
   ProjectDocument,
+  ProjectInclusion,
   ProjectLineItem,
   ProjectLineItemEquipmentOverride,
   ProjectLineItemLaborOverride,
@@ -36,6 +39,7 @@ import {
 import type {
   BidItemEquipmentRowUpdate,
   BidItemMaterialRowUpdate,
+  CompanyProfileInput,
   DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
   LaborOverrideInput,
@@ -50,8 +54,10 @@ import type {
   NewEquipmentGroupInput,
   NewEquipmentGroupMemberInput,
   NewEquipmentRateInput,
+  NewInclusionExclusionBankItemInput,
   NewMaterialInput,
   NewProjectDocumentInput,
+  NewProjectInclusionInput,
   NewProjectInput,
   NewProjectLineItemInput,
   NewVendorQuoteInput,
@@ -101,6 +107,10 @@ class Store {
   // No write path exists yet (historical tracking / mark-won-lost is future
   // work); kept empty so listBidHistory has somewhere real to read from.
   bidHistory: BidHistoryEntry[] = [];
+
+  companyProfile: CompanyProfile[] = [];
+  inclusionBankItems: InclusionExclusionBankItem[] = [];
+  projectInclusions: ProjectInclusion[] = [];
 }
 
 // A module-level singleton so state survives across requests within the
@@ -984,5 +994,90 @@ export class InMemoryRepository implements Repository {
 
   async removeProjectDocument(id: string) {
     store.documents = store.documents.filter((d) => d.id !== id);
+  }
+
+  // ---------------- Company profile ----------------
+
+  async getCompanyProfile() {
+    return store.companyProfile[0];
+  }
+
+  async upsertCompanyProfile(input: CompanyProfileInput) {
+    const existing = store.companyProfile[0];
+    if (existing) {
+      Object.assign(existing, input);
+      return existing;
+    }
+    const created: CompanyProfile = {
+      id: randomUUID(),
+      company_name: input.company_name,
+      address_line1: input.address_line1 ?? null,
+      city_state_zip: input.city_state_zip ?? null,
+      contact_name: input.contact_name ?? null,
+      contact_phone: input.contact_phone ?? null,
+      contact_email: input.contact_email ?? null,
+      certification_tagline: input.certification_tagline ?? null,
+      quote_validity_days: input.quote_validity_days ?? 30,
+    };
+    store.companyProfile.push(created);
+    return created;
+  }
+
+  // ---------------- Inclusion/exclusion bank + per-project copies ----------------
+
+  async listInclusionBankItems() {
+    return [...store.inclusionBankItems].sort(
+      (a, b) => a.category.localeCompare(b.category) || a.sort_order - b.sort_order
+    );
+  }
+
+  async addInclusionBankItem(input: NewInclusionExclusionBankItemInput) {
+    const maxSort = store.inclusionBankItems
+      .filter((i) => i.category === input.category)
+      .reduce((max, i) => Math.max(max, i.sort_order), -1);
+    const created: InclusionExclusionBankItem = {
+      id: randomUUID(),
+      category: input.category,
+      text: input.text,
+      sort_order: maxSort + 1,
+    };
+    store.inclusionBankItems.push(created);
+    return created;
+  }
+
+  async removeInclusionBankItem(id: string) {
+    store.inclusionBankItems = store.inclusionBankItems.filter((i) => i.id !== id);
+  }
+
+  async listProjectInclusions(projectId: string) {
+    return store.projectInclusions
+      .filter((i) => i.project_id === projectId)
+      .sort((a, b) => a.category.localeCompare(b.category) || a.sort_order - b.sort_order);
+  }
+
+  async addProjectInclusion(projectId: string, input: NewProjectInclusionInput) {
+    const maxSort = store.projectInclusions
+      .filter((i) => i.project_id === projectId && i.category === input.category)
+      .reduce((max, i) => Math.max(max, i.sort_order), -1);
+    const created: ProjectInclusion = {
+      id: randomUUID(),
+      project_id: projectId,
+      category: input.category,
+      text: input.text,
+      sort_order: maxSort + 1,
+    };
+    store.projectInclusions.push(created);
+    return created;
+  }
+
+  async updateProjectInclusion(id: string, text: string) {
+    const row = store.projectInclusions.find((i) => i.id === id);
+    if (!row) throw new Error(`project inclusion not found: ${id}`);
+    row.text = text;
+    return row;
+  }
+
+  async removeProjectInclusion(id: string) {
+    store.projectInclusions = store.projectInclusions.filter((i) => i.id !== id);
   }
 }

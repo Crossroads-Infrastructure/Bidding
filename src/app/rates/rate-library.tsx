@@ -4,12 +4,15 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type {
   CompanyDefaults,
+  CompanyProfile,
   CrewGroup,
   CrewGroupMember,
   CrewRate,
   EquipmentGroup,
   EquipmentGroupMember,
   EquipmentRate,
+  InclusionExclusionBankItem,
+  InclusionExclusionCategory,
   Material,
 } from "@/types/domain";
 import { isRateStale } from "@/lib/rate-utils";
@@ -19,6 +22,7 @@ import {
   addCrewRateAction,
   addEquipmentGroupMemberAction,
   addEquipmentRateAction,
+  addInclusionBankItemAction,
   addMaterialAction,
   archiveCrewRateAction,
   archiveEquipmentRateAction,
@@ -32,13 +36,15 @@ import {
   deleteMaterialPermanentlyAction,
   removeCrewGroupMemberAction,
   removeEquipmentGroupMemberAction,
+  removeInclusionBankItemAction,
   restoreCrewRateAction,
   restoreEquipmentRateAction,
   restoreMaterialAction,
   updateCrewGroupMemberAction,
+  upsertCompanyProfileAction,
 } from "../actions";
 
-type Tab = "crew" | "equipment" | "materials" | "crew-groups" | "equipment-groups";
+type Tab = "crew" | "equipment" | "materials" | "crew-groups" | "equipment-groups" | "inclusions";
 
 export function RateLibrary({
   crewRates,
@@ -49,6 +55,8 @@ export function RateLibrary({
   crewGroupMembersByGroup,
   equipmentGroups,
   equipmentGroupMembersByGroup,
+  companyProfile,
+  inclusionBankItems,
 }: {
   crewRates: CrewRate[];
   equipmentRates: EquipmentRate[];
@@ -58,15 +66,18 @@ export function RateLibrary({
   crewGroupMembersByGroup: Record<string, CrewGroupMember[]>;
   equipmentGroups: EquipmentGroup[];
   equipmentGroupMembersByGroup: Record<string, EquipmentGroupMember[]>;
+  companyProfile: CompanyProfile | undefined;
+  inclusionBankItems: InclusionExclusionBankItem[];
 }) {
   const [tab, setTab] = useState<Tab>("crew");
 
   return (
     <div>
       <CompanyDefaultsCard companyDefaults={companyDefaults} />
+      <CompanyProfileCard companyProfile={companyProfile} />
 
       <div className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
-        {(["crew", "equipment", "materials", "crew-groups", "equipment-groups"] as const).map((t) => (
+        {(["crew", "equipment", "materials", "crew-groups", "equipment-groups", "inclusions"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -76,7 +87,7 @@ export function RateLibrary({
                 : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
             }`}
           >
-            {t === "crew" ? "Crew" : t.replace("-", " ")}
+            {t === "crew" ? "Crew" : t === "inclusions" ? "Inclusions / Exclusions" : t.replace("-", " ")}
           </button>
         ))}
       </div>
@@ -98,6 +109,220 @@ export function RateLibrary({
           equipmentRates={equipmentRates.filter((r) => r.is_current)}
         />
       )}
+      {tab === "inclusions" && <InclusionBankTab items={inclusionBankItems} />}
+    </div>
+  );
+}
+
+function CompanyProfileCard({ companyProfile }: { companyProfile: CompanyProfile | undefined }) {
+  const [editing, setEditing] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [form, setForm] = useState({
+    company_name: companyProfile?.company_name ?? "",
+    address_line1: companyProfile?.address_line1 ?? "",
+    city_state_zip: companyProfile?.city_state_zip ?? "",
+    contact_name: companyProfile?.contact_name ?? "",
+    contact_phone: companyProfile?.contact_phone ?? "",
+    contact_email: companyProfile?.contact_email ?? "",
+    certification_tagline: companyProfile?.certification_tagline ?? "",
+    quote_validity_days: String(companyProfile?.quote_validity_days ?? 30),
+  });
+
+  return (
+    <div className="mb-6 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          Company Profile
+        </h2>
+        {!editing && (
+          <button
+            onClick={() => setEditing(true)}
+            className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+          >
+            {companyProfile ? "Update" : "Set up"}
+          </button>
+        )}
+      </div>
+      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+        Shown on the Quote screen&apos;s header and footer -- name, address, contact info, certification tagline,
+        and how many days a quote stays valid.
+      </p>
+      {!editing ? (
+        companyProfile ? (
+          <div className="text-sm">
+            <p className="font-medium">{companyProfile.company_name}</p>
+            <p className="text-zinc-500 dark:text-zinc-400">
+              {[companyProfile.address_line1, companyProfile.city_state_zip].filter(Boolean).join(", ") || "—"}
+            </p>
+            <p className="text-zinc-500 dark:text-zinc-400">
+              {[companyProfile.contact_name, companyProfile.contact_phone, companyProfile.contact_email]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">Not set up yet.</p>
+        )
+      ) : (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <input
+            placeholder="Company name"
+            value={form.company_name}
+            onChange={(e) => setForm({ ...form, company_name: e.target.value })}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 sm:col-span-2"
+          />
+          <input
+            placeholder="Address line"
+            value={form.address_line1}
+            onChange={(e) => setForm({ ...form, address_line1: e.target.value })}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <input
+            placeholder="City, State ZIP"
+            value={form.city_state_zip}
+            onChange={(e) => setForm({ ...form, city_state_zip: e.target.value })}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <input
+            placeholder="Contact name"
+            value={form.contact_name}
+            onChange={(e) => setForm({ ...form, contact_name: e.target.value })}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <input
+            placeholder="Contact phone"
+            value={form.contact_phone}
+            onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <input
+            placeholder="Contact email"
+            value={form.contact_email}
+            onChange={(e) => setForm({ ...form, contact_email: e.target.value })}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <input
+            type="number"
+            placeholder="Quote valid for (days)"
+            value={form.quote_validity_days}
+            onChange={(e) => setForm({ ...form, quote_validity_days: e.target.value })}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <input
+            placeholder="Certification tagline (e.g. CERTIFIED NCDOT DBE-WBE)"
+            value={form.certification_tagline}
+            onChange={(e) => setForm({ ...form, certification_tagline: e.target.value })}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 sm:col-span-2"
+          />
+          <div className="flex gap-2 sm:col-span-2">
+            <button
+              disabled={pending || !form.company_name}
+              onClick={async () => {
+                setPending(true);
+                await upsertCompanyProfileAction({
+                  company_name: form.company_name,
+                  address_line1: form.address_line1 || null,
+                  city_state_zip: form.city_state_zip || null,
+                  contact_name: form.contact_name || null,
+                  contact_phone: form.contact_phone || null,
+                  contact_email: form.contact_email || null,
+                  certification_tagline: form.certification_tagline || null,
+                  quote_validity_days: Number(form.quote_validity_days || 30),
+                });
+                setPending(false);
+                setEditing(false);
+              }}
+              className="rounded bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+            >
+              Save
+            </button>
+            <button onClick={() => setEditing(false)} className="text-xs font-medium text-zinc-500 hover:underline">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const INCLUSION_CATEGORY_LABEL: Record<InclusionExclusionCategory, string> = {
+  scope_of_work: "Scope of Work",
+  gc_responsibility: "General Contractor Responsibility",
+};
+
+// The reusable bank behind "having a bank of prefilled inclusions/
+// exclusions would simplify quoting" -- each project picks from this list
+// (see the Review screen) and gets its own independently-editable copy.
+function InclusionBankTab({ items }: { items: InclusionExclusionBankItem[] }) {
+  const [localItems, setLocalItems] = useState(items);
+
+  return (
+    <div className="flex flex-col gap-6">
+      {(["scope_of_work", "gc_responsibility"] as const).map((category) => (
+        <div key={category} className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            {INCLUSION_CATEGORY_LABEL[category]}
+          </h3>
+          <ul className="mb-3 flex flex-col gap-1.5 text-sm">
+            {localItems
+              .filter((i) => i.category === category)
+              .map((item) => (
+                <li key={item.id} className="flex items-start justify-between gap-3">
+                  <span>{item.text}</span>
+                  <button
+                    onClick={async () => {
+                      setLocalItems((rows) => rows.filter((r) => r.id !== item.id));
+                      await removeInclusionBankItemAction(item.id);
+                    }}
+                    className="shrink-0 text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            {localItems.filter((i) => i.category === category).length === 0 && (
+              <li className="text-zinc-500 dark:text-zinc-400">Nothing in the bank yet.</li>
+            )}
+          </ul>
+          <InclusionAddRow category={category} onAdded={(row) => setLocalItems((rows) => [...rows, row])} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InclusionAddRow({
+  category,
+  onAdded,
+}: {
+  category: InclusionExclusionCategory;
+  onAdded: (row: InclusionExclusionBankItem) => void;
+}) {
+  const [text, setText] = useState("");
+  const [pending, setPending] = useState(false);
+
+  return (
+    <div className="flex items-end gap-2">
+      <input
+        placeholder="New bank entry…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        className="min-w-0 flex-1 rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+      />
+      <button
+        disabled={!text.trim() || pending}
+        onClick={async () => {
+          setPending(true);
+          const row = await addInclusionBankItemAction({ category, text: text.trim() });
+          onAdded(row);
+          setText("");
+          setPending(false);
+        }}
+        className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+      >
+        Add
+      </button>
     </div>
   );
 }

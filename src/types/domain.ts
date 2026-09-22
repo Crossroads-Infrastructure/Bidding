@@ -245,3 +245,39 @@ export interface EquipmentGroupMember {
   equipment_group_id: string;
   equipment_id: string;
 }
+
+// Round 7: quote header info (name, address, contact, certifications) --
+// one row, edited in place, shown on every Quote export.
+export interface CompanyProfile {
+  id: string;
+  company_name: string;
+  address_line1: string | null;
+  city_state_zip: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  certification_tagline: string | null;
+  quote_validity_days: number;
+}
+
+// Round 7: a reusable bank of standard inclusion/exclusion language, split
+// into the two sections real quotes use. Picking one for a project copies
+// its text into a project_inclusions row (no persistent link back to the
+// bank, same "populate as a shortcut" pattern as crew/equipment groups) --
+// every job's wording ends up custom-editable from there.
+export type InclusionExclusionCategory = "scope_of_work" | "gc_responsibility";
+
+export interface InclusionExclusionBankItem {
+  id: string;
+  category: InclusionExclusionCategory;
+  text: string;
+  sort_order: number;
+}
+
+export interface ProjectInclusion {
+  id: string;
+  project_id: string;
+  category: InclusionExclusionCategory;
+  text: string;
+  sort_order: number;
+}

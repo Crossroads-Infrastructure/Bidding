@@ -8,13 +8,16 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
   const project = await repository.getProject(id);
   if (!project) notFound();
 
-  const [lineItems, crewRates, equipmentRates, materials, companyDefaults] = await Promise.all([
-    repository.listProjectLineItems(id),
-    repository.listCrewRates(),
-    repository.listEquipmentRates(),
-    repository.listMaterials(),
-    repository.getCurrentCompanyDefaults(),
-  ]);
+  const [lineItems, crewRates, equipmentRates, materials, companyDefaults, companyProfile, projectInclusions] =
+    await Promise.all([
+      repository.listProjectLineItems(id),
+      repository.listCrewRates(),
+      repository.listEquipmentRates(),
+      repository.listMaterials(),
+      repository.getCurrentCompanyDefaults(),
+      repository.getCompanyProfile(),
+      repository.listProjectInclusions(id),
+    ]);
 
   const bidItemIds = [...new Set(lineItems.map((li) => li.bid_item_id))];
   const recipes = await Promise.all(bidItemIds.map((bidItemId) => repository.getBidItemRecipe(bidItemId)));
@@ -54,6 +57,8 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
       laborOverridesByLine={laborOverridesByLine}
       equipmentOverridesByLine={equipmentOverridesByLine}
       vendorQuotesByLine={vendorQuotesByLine}
+      companyProfile={companyProfile}
+      projectInclusions={projectInclusions}
     />
   );
 }

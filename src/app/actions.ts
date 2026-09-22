@@ -6,6 +6,7 @@ import type {
   BidItemEquipmentRowUpdate,
   BidItemLaborRowUpdate,
   BidItemMaterialRowUpdate,
+  CompanyProfileInput,
   DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
   LaborOverrideInput,
@@ -20,7 +21,9 @@ import type {
   NewEquipmentGroupInput,
   NewEquipmentGroupMemberInput,
   NewEquipmentRateInput,
+  NewInclusionExclusionBankItemInput,
   NewMaterialInput,
+  NewProjectInclusionInput,
   NewProjectInput,
   NewProjectLineItemInput,
   NewVendorQuoteInput,
@@ -474,4 +477,48 @@ export async function addProjectDocumentAction(formData: FormData) {
 export async function removeProjectDocumentAction(id: string, projectId: string) {
   await getRepository().removeProjectDocument(id);
   revalidatePath(`/projects/${projectId}`);
+}
+
+// ---------------- Company profile ----------------
+
+export async function upsertCompanyProfileAction(input: CompanyProfileInput) {
+  const profile = await getRepository().upsertCompanyProfile(input);
+  revalidatePath("/rates");
+  return profile;
+}
+
+// ---------------- Inclusion/exclusion bank ----------------
+
+export async function addInclusionBankItemAction(input: NewInclusionExclusionBankItemInput) {
+  const item = await getRepository().addInclusionBankItem(input);
+  revalidatePath("/rates");
+  return item;
+}
+
+export async function removeInclusionBankItemAction(id: string) {
+  await getRepository().removeInclusionBankItem(id);
+  revalidatePath("/rates");
+}
+
+export async function addProjectInclusionAction(
+  projectId: string,
+  input: NewProjectInclusionInput
+) {
+  const item = await getRepository().addProjectInclusion(projectId, input);
+  revalidatePath(`/projects/${projectId}/review`);
+  revalidatePath(`/projects/${projectId}/quote`);
+  return item;
+}
+
+export async function updateProjectInclusionAction(id: string, projectId: string, text: string) {
+  const item = await getRepository().updateProjectInclusion(id, text);
+  revalidatePath(`/projects/${projectId}/review`);
+  revalidatePath(`/projects/${projectId}/quote`);
+  return item;
+}
+
+export async function removeProjectInclusionAction(id: string, projectId: string) {
+  await getRepository().removeProjectInclusion(id);
+  revalidatePath(`/projects/${projectId}/review`);
+  revalidatePath(`/projects/${projectId}/quote`);
 }

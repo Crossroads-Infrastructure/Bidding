@@ -50,8 +50,6 @@ export interface LineItemRowProps {
   onRemove: () => void;
   onQuantityChange: (q: number) => void;
   onQuantityCommit: (q: number) => void;
-  onRoundedRateChange: (rate: number | null) => void;
-  onRoundedRateCommit: (rate: number | null) => void;
   onFieldChange: (patch: Partial<ProjectLineItem>) => void;
   onFieldCommit: (patch: Partial<ProjectLineItem>) => void;
   onMaterialOverrideChange: (materialId: string, patch: { override_rate?: number | null; override_qty?: number | null }) => void;
@@ -85,8 +83,6 @@ export function LineItemRow(props: LineItemRowProps) {
     onRemove,
     onQuantityChange,
     onQuantityCommit,
-    onRoundedRateChange,
-    onRoundedRateCommit,
     onFieldChange,
     onFieldCommit,
     onMaterialOverrideChange,
@@ -130,16 +126,8 @@ export function LineItemRow(props: LineItemRowProps) {
           />
         </td>
         <td className="px-4 py-2">{formatCurrency(estimate.preProfitUnitPrice)}</td>
-        <td className="px-4 py-2">
-          <input
-            type="number"
-            step="0.01"
-            placeholder={estimate.preProfitUnitPrice.toFixed(2)}
-            value={line.manual_rounded_rate ?? ""}
-            onChange={(e) => onRoundedRateChange(e.target.value === "" ? null : Number(e.target.value))}
-            onBlur={(e) => onRoundedRateCommit(e.target.value === "" ? null : Number(e.target.value))}
-            className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-          />
+        <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400" title="Preview only -- uses the project's last-used profit %. Set the actual bid price on Review & Quote.">
+          {formatCurrency(estimate.rawUnitPrice)}
         </td>
         <td className="px-4 py-2 font-medium">{formatCurrency(estimate.finalTotal)}</td>
         <td className="px-4 py-2 text-right whitespace-nowrap">
