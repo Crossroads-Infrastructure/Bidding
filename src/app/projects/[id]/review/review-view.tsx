@@ -123,6 +123,21 @@ export function ReviewView({
   );
   const estimateByLineId = useMemo(() => new Map(estimate.lines.map((l) => [l.lineItemId, l])), [estimate.lines]);
 
+  // Self-performed lines only -- subcontracted lines have no labor/
+  // equipment/material breakdown, just a vendor quote (base is null).
+  const costBreakdown = useMemo(() => {
+    let labor = 0;
+    let equipment = 0;
+    let material = 0;
+    for (const line of estimate.lines) {
+      if (!line.base) continue;
+      labor += line.base.laborCost;
+      equipment += line.base.equipmentCost;
+      material += line.base.materialCost;
+    }
+    return { labor, equipment, material };
+  }, [estimate.lines]);
+
   function patchLine(lineId: string, patch: Partial<ProjectLineItem>) {
     setLineItemsState((rows) => rows.map((r) => (r.id === lineId ? { ...r, ...patch } : r)));
     updateProjectLineItemAction(lineId, project.id, patch);
@@ -209,34 +224,54 @@ export function ReviewView({
         </table>
       </div>
 
-      <div className="mt-6 ml-auto max-w-md rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
-          <span>Self-performed base cost</span>
-          <span>{formatCurrency(estimate.selfPerformed.totalBaseCost)}</span>
+      <div className="mt-6 flex flex-wrap justify-end gap-4">
+        <div className="w-full max-w-xs rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Cost breakdown
+          </h3>
+          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+            <span>Total labor</span>
+            <span>{formatCurrency(costBreakdown.labor)}</span>
+          </div>
+          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+            <span>Total equipment</span>
+            <span>{formatCurrency(costBreakdown.equipment)}</span>
+          </div>
+          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+            <span>Total material</span>
+            <span>{formatCurrency(costBreakdown.material)}</span>
+          </div>
         </div>
-        <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
-          <span>Overhead</span>
-          <span>{formatCurrency(estimate.selfPerformed.totalOverhead)}</span>
-        </div>
-        <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
-          <span>Contingency</span>
-          <span>{formatCurrency(estimate.selfPerformed.totalContingency)}</span>
-        </div>
-        <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
-          <span>Profit</span>
-          <span>{formatCurrency(estimate.selfPerformed.totalProfit)}</span>
-        </div>
-        <div className="mt-1 flex justify-between border-t border-zinc-200 pt-1 font-medium dark:border-zinc-800">
-          <span>Self-performed total</span>
-          <span>{formatCurrency(estimate.selfPerformed.total)}</span>
-        </div>
-        <div className="mt-2 flex justify-between text-zinc-600 dark:text-zinc-400">
-          <span>Subcontracted total</span>
-          <span>{formatCurrency(estimate.subcontracted.total)}</span>
-        </div>
-        <div className="mt-2 flex justify-between border-t border-zinc-200 pt-2 text-base font-semibold dark:border-zinc-800">
-          <span>Grand total</span>
-          <span>{formatCurrency(estimate.grandTotal)}</span>
+
+        <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+            <span>Self-performed base cost</span>
+            <span>{formatCurrency(estimate.selfPerformed.totalBaseCost)}</span>
+          </div>
+          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+            <span>Overhead</span>
+            <span>{formatCurrency(estimate.selfPerformed.totalOverhead)}</span>
+          </div>
+          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+            <span>Contingency</span>
+            <span>{formatCurrency(estimate.selfPerformed.totalContingency)}</span>
+          </div>
+          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+            <span>Profit</span>
+            <span>{formatCurrency(estimate.selfPerformed.totalProfit)}</span>
+          </div>
+          <div className="mt-1 flex justify-between border-t border-zinc-200 pt-1 font-medium dark:border-zinc-800">
+            <span>Self-performed total</span>
+            <span>{formatCurrency(estimate.selfPerformed.total)}</span>
+          </div>
+          <div className="mt-2 flex justify-between text-zinc-600 dark:text-zinc-400">
+            <span>Subcontracted total</span>
+            <span>{formatCurrency(estimate.subcontracted.total)}</span>
+          </div>
+          <div className="mt-2 flex justify-between border-t border-zinc-200 pt-2 text-base font-semibold dark:border-zinc-800">
+            <span>Grand total</span>
+            <span>{formatCurrency(estimate.grandTotal)}</span>
+          </div>
         </div>
       </div>
 
