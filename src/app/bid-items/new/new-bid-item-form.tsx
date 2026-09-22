@@ -266,6 +266,7 @@ export function NewBidItemForm({
                     onChange={(v) => updateRow(setMaterialRows, idx, { material_id: v })}
                     options={materials.map((m) => ({ value: m.id, label: m.material_name }))}
                   />
+                  <MaterialPriceHint material={materials.find((m) => m.id === row.material_id)} />
                   <Select
                     label="Calc method"
                     value={row.calc_method}
@@ -464,6 +465,18 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
     >
       Remove
     </button>
+  );
+}
+
+// So you can see what you're actually pricing against without leaving the
+// recipe builder to go check the Rate Library.
+function MaterialPriceHint({ material }: { material: Material | undefined }) {
+  if (!material) return null;
+  return (
+    <span className="pb-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+      {material.rate.toLocaleString("en-US", { style: "currency", currency: "USD" })} / {material.unit}
+      {material.vendor ? ` · ${material.vendor}` : ""}
+    </span>
   );
 }
 

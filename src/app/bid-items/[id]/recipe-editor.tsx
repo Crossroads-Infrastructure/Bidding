@@ -600,6 +600,14 @@ function AddMaterialRow({
           </option>
         ))}
       </select>
+      {materialId && (
+        <span className="pb-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+          {(() => {
+            const m = materials.find((mat) => mat.id === materialId);
+            return m ? `${m.rate.toLocaleString("en-US", { style: "currency", currency: "USD" })} / ${m.unit}` : null;
+          })()}
+        </span>
+      )}
       <UnitRateInput perUnitLabel="qty/unit" rateLabel="units/qty" value={qtyPerUnit} onChange={setQtyPerUnit} widthClassName="w-24" />
       <button
         disabled={!materialId || !qtyPerUnit}
