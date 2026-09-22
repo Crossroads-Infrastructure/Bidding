@@ -215,12 +215,27 @@ export function QuoteView({
         </div>
       </div>
 
-      {/* Quote header -- shown both on screen and when printed, matching the company's real quote template */}
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-6 border-b border-zinc-200 pb-4 dark:border-zinc-800 print:border-black">
-        <div className="flex items-start gap-4">
+      {/* Quote header -- shown both on screen and when printed, matching the company's real quote template.
+          Print-only: the logo becomes a faint watermark confined to this header box (not the whole page) --
+          `relative overflow-hidden` clips it to these bounds so it never bleeds into the item table below. */}
+      <div className="relative mb-6 flex flex-wrap items-start justify-between gap-6 overflow-hidden border-b border-zinc-200 pb-4 dark:border-zinc-800 print:border-black">
+        {companyProfile?.logo_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={companyProfile.logo_url}
+            alt=""
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-1/2 z-0 hidden w-[70%] max-w-md -translate-x-1/2 -translate-y-1/2 opacity-[0.08] print:block"
+          />
+        )}
+        <div className="relative z-10 flex items-start gap-4">
           {companyProfile?.logo_url && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={companyProfile.logo_url} alt={`${companyProfile.company_name} logo`} className="h-16 w-auto" />
+            <img
+              src={companyProfile.logo_url}
+              alt={`${companyProfile.company_name} logo`}
+              className="h-16 w-auto print:hidden"
+            />
           )}
           <div>
             <p className="text-lg font-semibold">Quote for: {project.project_name}</p>
@@ -248,7 +263,7 @@ export function QuoteView({
             <p className="mt-2 hidden text-sm print:block">Bid to: {bidTo}</p>
           </div>
         </div>
-        <div className="text-right text-sm">
+        <div className="relative z-10 text-right text-sm">
           {companyProfile?.contact_name && <p>Contact: {companyProfile.contact_name}</p>}
           {companyProfile?.contact_phone && <p>Cell: {companyProfile.contact_phone}</p>}
           {companyProfile?.contact_email && <p>Email: {companyProfile.contact_email}</p>}
