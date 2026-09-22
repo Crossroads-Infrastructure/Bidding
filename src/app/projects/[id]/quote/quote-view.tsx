@@ -292,15 +292,15 @@ export function QuoteView({
                 </td>
               </tr>
             )}
+            {rows.length > 0 && (
+              <tr className="border-t border-zinc-200 dark:border-zinc-800">
+                <td colSpan={5} className="px-4 py-2 text-right font-semibold">
+                  Total Bid Price
+                </td>
+                <td className="px-4 py-2 text-base font-semibold">{formatCurrency(estimate.grandTotal)}</td>
+              </tr>
+            )}
           </tbody>
-          <tfoot>
-            <tr className="border-t border-zinc-200 dark:border-zinc-800">
-              <td colSpan={5} className="px-4 py-2 text-right font-semibold">
-                Total Bid Price
-              </td>
-              <td className="px-4 py-2 text-base font-semibold">{formatCurrency(estimate.grandTotal)}</td>
-            </tr>
-          </tfoot>
         </table>
       </div>
 
