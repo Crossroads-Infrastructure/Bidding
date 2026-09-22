@@ -16,6 +16,7 @@ import type {
   Material,
 } from "@/types/domain";
 import { isRateStale } from "@/lib/rate-utils";
+import { resizeImageFile } from "@/lib/image-resize";
 import {
   addCompanyDefaultsAction,
   addCrewGroupMemberAction,
@@ -170,8 +171,9 @@ function CompanyProfileCard({ companyProfile }: { companyProfile: CompanyProfile
               const file = e.target.files?.[0];
               if (!file) return;
               setLogoPending(true);
+              const resized = await resizeImageFile(file);
               const formData = new FormData();
-              formData.set("file", file);
+              formData.set("file", resized);
               await uploadCompanyLogoAction(formData);
               setLogoPending(false);
               router.refresh();
@@ -179,6 +181,9 @@ function CompanyProfileCard({ companyProfile }: { companyProfile: CompanyProfile
           />
         </label>
       </div>
+      <p className="-mt-2 mb-3 text-[10px] text-zinc-400">
+        Any image works -- it&apos;s automatically resized before upload, so there&apos;s no need to prepare it first.
+      </p>
       {!editing ? (
         companyProfile ? (
           <div className="text-sm">
