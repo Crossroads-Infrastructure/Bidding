@@ -46,6 +46,7 @@ import type {
   NewInclusionExclusionBankItemInput,
   NewMaterialInput,
   NewProjectDocumentInput,
+  RecordProjectDocumentInput,
   NewProjectInclusionInput,
   NewProjectInput,
   NewProjectLineItemInput,
@@ -1376,6 +1377,25 @@ export class SupabaseRepository implements Repository {
             file_name: input.file_name,
             file_size: input.file_size,
             file_url: publicUrl.publicUrl,
+          })
+          .select()
+          .single()
+      ),
+      PROJECT_DOCUMENT_NUMERIC_FIELDS
+    );
+  }
+
+  async recordProjectDocument(input: RecordProjectDocumentInput) {
+    return coerceNumeric(
+      unwrap<ProjectDocument>(
+        await this.client
+          .from("project_documents")
+          .insert({
+            project_id: input.project_id,
+            category: input.category,
+            file_name: input.file_name,
+            file_size: input.file_size,
+            file_url: input.file_url,
           })
           .select()
           .single()

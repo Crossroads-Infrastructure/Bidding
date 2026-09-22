@@ -141,6 +141,17 @@ export interface NewProjectDocumentInput {
   content: Uint8Array;
 }
 
+// Used once the file has already been uploaded directly from the browser
+// to Storage (see src/lib/supabase-browser-upload.ts) -- this just records
+// the resulting metadata, no binary payload involved.
+export interface RecordProjectDocumentInput {
+  project_id: string;
+  category: DocumentCategory;
+  file_name: string;
+  file_size: number;
+  file_url: string;
+}
+
 export interface CompanyProfileInput {
   company_name: string;
   address_line1?: string | null;
@@ -292,6 +303,7 @@ export interface Repository {
 
   listProjectDocuments(projectId: string): Promise<ProjectDocument[]>;
   addProjectDocument(input: NewProjectDocumentInput): Promise<ProjectDocument>;
+  recordProjectDocument(input: RecordProjectDocumentInput): Promise<ProjectDocument>;
   removeProjectDocument(id: string): Promise<void>;
 
   // Company profile (quote header)

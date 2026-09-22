@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import type { DocumentCategory, ProjectDocument } from "@/types/domain";
-import { addProjectDocumentAction, removeProjectDocumentAction } from "../../actions";
+import { addProjectDocumentAction, recordProjectDocumentAction, removeProjectDocumentAction } from "../../actions";
+import { canUploadDirect, uploadFileDirect } from "@/lib/supabase-browser-upload";
 
 const CATEGORIES: DocumentCategory[] = ["Plans", "Proposal", "Addenda", "Other"];
 
@@ -22,20 +23,41 @@ export function DocumentsPanel({
   const [documents, setDocuments] = useState(initialDocuments);
   const [category, setCategory] = useState<DocumentCategory>("Plans");
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleUpload() {
     const file = fileInputRef.current?.files?.[0];
     if (!file) return;
     setUploading(true);
-    const formData = new FormData();
-    formData.set("project_id", projectId);
-    formData.set("category", category);
-    formData.set("file", file);
-    const doc = await addProjectDocumentAction(formData);
-    setDocuments((docs) => [doc, ...docs]);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setUploading(false);
+    setUploadError(null);
+    try {
+      let doc: ProjectDocument;
+      if (canUploadDirect()) {
+        // Uploads straight from the browser to Storage -- no server-side
+        // body size limit to run into, so large plan sets go through fine.
+        const { url } = await uploadFileDirect(file, `${projectId}/${category}`);
+        doc = await recordProjectDocumentAction({
+          project_id: projectId,
+          category,
+          file_name: file.name,
+          file_size: file.size,
+          file_url: url,
+        });
+      } else {
+        const formData = new FormData();
+        formData.set("project_id", projectId);
+        formData.set("category", category);
+        formData.set("file", file);
+        doc = await addProjectDocumentAction(formData);
+      }
+      setDocuments((docs) => [doc, ...docs]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed -- try again.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function handleRemove(id: string) {
@@ -76,6 +98,9 @@ export function DocumentsPanel({
           {uploading ? "Uploading…" : "Upload"}
         </button>
       </div>
+      {uploadError && (
+        <p className="mb-3 -mt-2 text-xs text-red-600 dark:text-red-400">{uploadError}</p>
+      )}
 
       {CATEGORIES.map((cat) => {
         const inCategory = documents.filter((d) => d.category === cat);

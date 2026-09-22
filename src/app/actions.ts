@@ -26,6 +26,7 @@ import type {
   NewProjectInclusionInput,
   NewProjectInput,
   NewProjectLineItemInput,
+  RecordProjectDocumentInput,
   NewVendorQuoteInput,
   ProjectLineItemUpdate,
   VendorQuoteUpdate,
@@ -479,6 +480,17 @@ export async function addProjectDocumentAction(formData: FormData) {
     content,
   });
   revalidatePath(`/projects/${projectId}`);
+  return document;
+}
+
+// The binary upload happens client-side, direct to Storage (see
+// src/lib/supabase-browser-upload.ts) -- Vercel's serverless functions
+// (and Next's Server Actions) enforce request body limits well under
+// what a real plan set PDF needs, so routing the file itself through
+// the server doesn't scale. This just records the resulting metadata.
+export async function recordProjectDocumentAction(input: RecordProjectDocumentInput) {
+  const document = await getRepository().recordProjectDocument(input);
+  revalidatePath(`/projects/${input.project_id}`);
   return document;
 }
 

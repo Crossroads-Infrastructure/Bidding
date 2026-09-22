@@ -69,6 +69,22 @@ describe("smoke test: round 7 features via InMemoryRepository", () => {
     expect(profile.logo_url).toContain("data:image");
   });
 
+  it("recordProjectDocument stores metadata for an already-uploaded file", async () => {
+    const repo = new InMemoryRepository();
+    const project = await repo.createProject({ project_name: "Docs Test" });
+    const doc = await repo.recordProjectDocument({
+      project_id: project.id,
+      category: "Plans",
+      file_name: "site-plan.pdf",
+      file_size: 25_000_000,
+      file_url: "https://example.com/site-plan.pdf",
+    });
+    expect(doc.file_url).toBe("https://example.com/site-plan.pdf");
+    expect(doc.file_size).toBe(25_000_000);
+    const [listed] = await repo.listProjectDocuments(project.id);
+    expect(listed.id).toBe(doc.id);
+  });
+
   it("duration_days survives create -> update -> read round trip on a project line item", async () => {
     const repo = new InMemoryRepository();
     const project = await repo.createProject({ project_name: "Duration Test" });

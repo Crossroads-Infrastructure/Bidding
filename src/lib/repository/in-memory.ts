@@ -57,6 +57,7 @@ import type {
   NewInclusionExclusionBankItemInput,
   NewMaterialInput,
   NewProjectDocumentInput,
+  RecordProjectDocumentInput,
   NewProjectInclusionInput,
   NewProjectInput,
   NewProjectLineItemInput,
@@ -992,6 +993,20 @@ export class InMemoryRepository implements Repository {
       category: input.category,
       file_name: input.file_name,
       file_url: `data:application/octet-stream;base64,${base64}`,
+      file_size: input.file_size,
+      uploaded_date: new Date().toISOString(),
+    };
+    store.documents.push(created);
+    return created;
+  }
+
+  async recordProjectDocument(input: RecordProjectDocumentInput) {
+    const created: ProjectDocument = {
+      id: randomUUID(),
+      project_id: input.project_id,
+      category: input.category,
+      file_name: input.file_name,
+      file_url: input.file_url,
       file_size: input.file_size,
       uploaded_date: new Date().toISOString(),
     };
