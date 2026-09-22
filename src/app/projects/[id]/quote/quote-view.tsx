@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { RateContext, computeProjectEstimate, type SelectedVendorQuote } from "@/lib/calc-engine";
+import { formatDate } from "@/lib/format";
 import { updateProjectClientAction } from "../../../actions";
 import type {
   BidItemRecipe,
@@ -154,7 +155,7 @@ export function QuoteView({
       if (companyProfile.contact_email) rowsOut.push([`Email: ${companyProfile.contact_email}`]);
     }
     rowsOut.push([]);
-    rowsOut.push([`Bid Date: ${project.bid_date ?? "—"}`]);
+    rowsOut.push([`Bid Date: ${formatDate(project.bid_date)}`]);
     rowsOut.push([`Quote is valid for ${validityDays} days`]);
     rowsOut.push([`Bid to: ${bidTo}`]);
     rowsOut.push([]);
@@ -168,11 +169,11 @@ export function QuoteView({
       if (companyProfile?.certification_tagline) rowsOut.push([companyProfile.certification_tagline]);
       if (scopeOfWork.length) {
         rowsOut.push([], ["Scope of Work:"]);
-        scopeOfWork.forEach((i) => rowsOut.push([`- ${i.text}`]));
+        scopeOfWork.forEach((i) => rowsOut.push([`• ${i.text}`]));
       }
       if (gcResponsibility.length) {
         rowsOut.push([], ["General Contractor Responsibility:"]);
-        gcResponsibility.forEach((i) => rowsOut.push([`- ${i.text}`]));
+        gcResponsibility.forEach((i) => rowsOut.push([`• ${i.text}`]));
       }
     }
 
@@ -190,7 +191,7 @@ export function QuoteView({
           <h1 className="text-2xl font-semibold tracking-tight">Quote — {project.project_name}</h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             {[project.client, project.location, project.dot_or_municipality].filter(Boolean).join(" · ") || "—"}
-            {project.bid_date ? ` · Bid ${project.bid_date}` : ""}
+            {project.bid_date ? ` · Bid ${formatDate(project.bid_date)}` : ""}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -252,7 +253,7 @@ export function QuoteView({
           {companyProfile?.contact_name && <p>Contact: {companyProfile.contact_name}</p>}
           {companyProfile?.contact_phone && <p>Cell: {companyProfile.contact_phone}</p>}
           {companyProfile?.contact_email && <p>Email: {companyProfile.contact_email}</p>}
-          <p className="mt-2">Bid Date: {project.bid_date ?? "—"}</p>
+          <p className="mt-2">Bid Date: {formatDate(project.bid_date)}</p>
           <p>Quote is valid for {validityDays} days</p>
         </div>
       </div>
@@ -313,9 +314,9 @@ export function QuoteView({
           {scopeOfWork.length > 0 && (
             <div className="mt-3">
               <p className="font-semibold">Scope of Work:</p>
-              <ul className="mt-1 list-none">
+              <ul className="mt-1 list-disc pl-5">
                 {scopeOfWork.map((i) => (
-                  <li key={i.id}>- {i.text}</li>
+                  <li key={i.id}>{i.text}</li>
                 ))}
               </ul>
             </div>
@@ -323,9 +324,9 @@ export function QuoteView({
           {gcResponsibility.length > 0 && (
             <div className="mt-3">
               <p className="font-semibold">General Contractor Responsibility:</p>
-              <ul className="mt-1 list-none">
+              <ul className="mt-1 list-disc pl-5">
                 {gcResponsibility.map((i) => (
-                  <li key={i.id}>- {i.text}</li>
+                  <li key={i.id}>{i.text}</li>
                 ))}
               </ul>
             </div>

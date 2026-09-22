@@ -16,6 +16,7 @@ import type {
   Material,
 } from "@/types/domain";
 import { isRateStale } from "@/lib/rate-utils";
+import { formatDate } from "@/lib/format";
 import { resizeImageFile } from "@/lib/image-resize";
 import {
   addCompanyDefaultsAction,
@@ -503,7 +504,7 @@ function CompanyDefaultsCard({ companyDefaults }: { companyDefaults: CompanyDefa
         </h2>
         {companyDefaults && (
           <span className="text-xs text-zinc-500 dark:text-zinc-400">
-            Effective {companyDefaults.effective_date}
+            Effective {formatDate(companyDefaults.effective_date)}
             <StaleBadge effectiveDate={companyDefaults.effective_date} />
           </span>
         )}
@@ -603,7 +604,7 @@ function CrewTab({ rates }: { rates: CrewRate[] }) {
                     <td className="px-4 py-2">${r.hourly_rate.toFixed(2)}</td>
                     <td className="px-4 py-2">${r.fringe.toFixed(2)}</td>
                     <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
-                      {r.effective_date}
+                      {formatDate(r.effective_date)}
                       <StaleBadge effectiveDate={r.effective_date} />
                     </td>
                     <td className="px-4 py-2 text-right whitespace-nowrap">
@@ -796,7 +797,7 @@ function EquipmentTab({ rates }: { rates: EquipmentRate[] }) {
                     <td className="px-4 py-2 font-medium">{r.equipment_name}</td>
                     <td className="px-4 py-2">${r.hourly_rate.toFixed(2)}</td>
                     <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
-                      {r.effective_date}
+                      {formatDate(r.effective_date)}
                       <StaleBadge effectiveDate={r.effective_date} />
                     </td>
                     <td className="px-4 py-2 text-right whitespace-nowrap">
@@ -967,7 +968,7 @@ function MaterialsTab({ materials }: { materials: Material[] }) {
                     <td className="px-4 py-2">${m.rate.toFixed(2)}</td>
                     <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{m.vendor ?? "—"}</td>
                     <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
-                      {m.effective_date}
+                      {formatDate(m.effective_date)}
                       <StaleBadge effectiveDate={m.effective_date} />
                     </td>
                     <td className="px-4 py-2 text-right whitespace-nowrap">

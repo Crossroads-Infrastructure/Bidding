@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getRepository } from "@/lib/repository";
+import { formatDate } from "@/lib/format";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -66,7 +67,7 @@ export default async function BidHistoryPage() {
                 <div className="text-sm text-zinc-500 dark:text-zinc-400">
                   {[project.client, project.location, project.dot_or_municipality].filter(Boolean).join(" · ") ||
                     "—"}
-                  {project.bid_date ? ` · Bid ${project.bid_date}` : ""}
+                  {project.bid_date ? ` · Bid ${formatDate(project.bid_date)}` : ""}
                 </div>
               </Link>
               <div className="flex items-center gap-4">

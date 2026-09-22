@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RateContext, computeProjectEstimate, type SelectedVendorQuote } from "@/lib/calc-engine";
+import { formatDate } from "@/lib/format";
 import type {
   BidItem,
   BidItemRecipe,
@@ -201,7 +202,7 @@ export function EstimateBuilder({
           <h1 className="text-2xl font-semibold tracking-tight">{project.project_name}</h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             {[project.client, project.location, project.dot_or_municipality].filter(Boolean).join(" · ") || "—"}
-            {project.bid_date ? ` · Bid ${project.bid_date}` : ""}
+            {project.bid_date ? ` · Bid ${formatDate(project.bid_date)}` : ""}
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             Company markup: {(companyDefaults.overhead_pct * 100).toFixed(1)}% overhead ·{" "}

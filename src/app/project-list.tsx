@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Project, ProjectStatus } from "@/types/domain";
+import { formatDate } from "@/lib/format";
 import { archiveProjectAction, deleteProjectPermanentlyAction, restoreProjectAction } from "./actions";
 import { DuplicateProjectButton } from "./duplicate-project-button";
 
@@ -69,7 +70,7 @@ export function ProjectList({
                     {[project.client, project.location, project.dot_or_municipality]
                       .filter(Boolean)
                       .join(" · ") || "—"}
-                    {project.bid_date ? ` · Bid ${project.bid_date}` : ""}
+                    {project.bid_date ? ` · Bid ${formatDate(project.bid_date)}` : ""}
                   </div>
                 </Link>
               ) : (
@@ -79,7 +80,7 @@ export function ProjectList({
                     {[project.client, project.location, project.dot_or_municipality]
                       .filter(Boolean)
                       .join(" · ") || "—"}
-                    {project.bid_date ? ` · Bid ${project.bid_date}` : ""}
+                    {project.bid_date ? ` · Bid ${formatDate(project.bid_date)}` : ""}
                   </div>
                 </div>
               )}
