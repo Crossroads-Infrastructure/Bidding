@@ -6,6 +6,7 @@ import type {
   BidItemLabor,
   BidItemMaterial,
   BidItemRecipe,
+  BidOutcome,
   CompanyDefaults,
   CompanyProfile,
   CrewGroup,
@@ -39,6 +40,7 @@ import {
 import type {
   BidItemEquipmentRowUpdate,
   BidItemMaterialRowUpdate,
+  BidOutcomeLineInput,
   CompanyProfileInput,
   DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
@@ -673,6 +675,7 @@ export class InMemoryRepository implements Repository {
       default_profit_pct: input.default_profit_pct ?? lastUsedProfitPct ?? 0,
       created_at: new Date().toISOString(),
       is_active: true,
+      final_bid_total: null,
     };
     store.projects.push(created);
     return created;
@@ -759,6 +762,34 @@ export class InMemoryRepository implements Repository {
     const project = store.projects.find((p) => p.id === projectId);
     if (!project) throw new Error(`project not found: ${projectId}`);
     project.status = status;
+    return project;
+  }
+
+  async recordBidOutcome(
+    projectId: string,
+    outcome: BidOutcome,
+    finalBidTotal: number,
+    lines: BidOutcomeLineInput[]
+  ) {
+    const project = store.projects.find((p) => p.id === projectId);
+    if (!project) throw new Error(`project not found: ${projectId}`);
+    project.status = outcome;
+    project.final_bid_total = finalBidTotal;
+
+    store.bidHistory = store.bidHistory.filter((h) => h.project_id !== projectId);
+    const date = new Date().toISOString().slice(0, 10);
+    for (const line of lines) {
+      store.bidHistory.push({
+        id: randomUUID(),
+        project_id: projectId,
+        bid_item_id: line.bid_item_id,
+        unit_price_bid: line.unit_price_bid,
+        unit_price_awarded: outcome === "won" ? line.unit_price_bid : null,
+        outcome,
+        date,
+        rates_snapshot: { unit_price_bid: line.unit_price_bid, recorded_at: new Date().toISOString() },
+      });
+    }
     return project;
   }
 

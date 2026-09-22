@@ -6,6 +6,7 @@ import type {
   BidItemEquipmentRowUpdate,
   BidItemLaborRowUpdate,
   BidItemMaterialRowUpdate,
+  BidOutcomeLineInput,
   CompanyProfileInput,
   DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
@@ -63,6 +64,20 @@ export async function updateProjectStatusAction(
   const project = await getRepository().updateProjectStatus(projectId, status);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/");
+  return project;
+}
+
+export async function markProjectWonLostAction(
+  projectId: string,
+  outcome: "won" | "lost",
+  finalBidTotal: number,
+  lines: BidOutcomeLineInput[]
+) {
+  const project = await getRepository().recordBidOutcome(projectId, outcome, finalBidTotal, lines);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/review`);
+  revalidatePath("/");
+  revalidatePath("/bid-history");
   return project;
 }
 

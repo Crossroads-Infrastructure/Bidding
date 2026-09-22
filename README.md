@@ -28,6 +28,16 @@ To connect a real Supabase project: create one, run the SQL in
 `supabase/migrations/0001_initial_schema.sql` against it, then copy
 `.env.local.example` to `.env.local` and fill in the URL/anon key.
 
+## Authentication
+
+Once `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set, the
+whole app is gated behind login (Supabase Auth — email/password). There's no
+public sign-up; add each team member yourself in the Supabase dashboard under
+**Authentication → Users → Add user** (set an email + password, no email
+confirmation needed for an internal tool like this). Remove a user there to
+revoke their access. Without those env vars set (local demo mode), auth is
+skipped entirely.
+
 ## Tests
 
 ```bash
@@ -48,5 +58,4 @@ not a pinned row id), and the overhead/profit/contingency override hierarchy.
 
 ## Not yet built
 
-Quick Quote mode, Review/Export (PDF/Excel), bid history/outcome tracking,
-and the Excel import script — next up per the build order.
+Quick Quote mode and the Excel import script — next up per the build order.

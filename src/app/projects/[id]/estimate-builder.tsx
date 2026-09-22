@@ -25,6 +25,7 @@ import {
   clearEquipmentOverrideAction,
   clearLaborOverrideAction,
   clearMaterialOverrideAction,
+  markProjectWonLostAction,
   removeProjectLineItemAction,
   setEquipmentOverrideAction,
   setLaborOverrideAction,
@@ -219,7 +220,19 @@ export function EstimateBuilder({
             onChange={async (e) => {
               const next = e.target.value as ProjectStatus;
               setStatus(next);
-              await updateProjectStatusAction(project.id, next);
+              if (next === "won" || next === "lost") {
+                await markProjectWonLostAction(
+                  project.id,
+                  next,
+                  estimate.grandTotal,
+                  estimate.lines.map((l) => ({
+                    bid_item_id: l.bidItemId,
+                    unit_price_bid: l.roundedRate ?? l.rawUnitPrice,
+                  }))
+                );
+              } else {
+                await updateProjectStatusAction(project.id, next);
+              }
             }}
             className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium capitalize dark:border-zinc-700 dark:bg-zinc-800"
           >

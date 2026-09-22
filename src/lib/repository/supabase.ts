@@ -5,6 +5,7 @@ import type {
   BidItemLabor,
   BidItemMaterial,
   BidItemRecipe,
+  BidOutcome,
   CompanyDefaults,
   CompanyProfile,
   CrewGroup,
@@ -28,6 +29,7 @@ import type {
   BidItemEquipmentRowUpdate,
   BidItemLaborRowUpdate,
   BidItemMaterialRowUpdate,
+  BidOutcomeLineInput,
   CompanyProfileInput,
   DuplicateProjectDetailsInput,
   EquipmentOverrideInput,
@@ -108,7 +110,7 @@ const BID_ITEM_MATERIAL_NUMERIC_FIELDS: (keyof BidItemMaterial)[] = [
   "application_rate",
   "waste_pct",
 ];
-const PROJECT_NUMERIC_FIELDS: (keyof Project)[] = ["default_profit_pct"];
+const PROJECT_NUMERIC_FIELDS: (keyof Project)[] = ["default_profit_pct", "final_bid_total"];
 const PROJECT_LINE_ITEM_NUMERIC_FIELDS: (keyof ProjectLineItem)[] = [
   "quantity",
   "override_overhead_pct",
@@ -1029,6 +1031,42 @@ export class SupabaseRepository implements Repository {
       ),
       PROJECT_NUMERIC_FIELDS
     );
+  }
+
+  async recordBidOutcome(
+    projectId: string,
+    outcome: BidOutcome,
+    finalBidTotal: number,
+    lines: BidOutcomeLineInput[]
+  ) {
+    const project = coerceNumeric(
+      unwrap<Project>(
+        await this.client
+          .from("projects")
+          .update({ status: outcome, final_bid_total: finalBidTotal })
+          .eq("id", projectId)
+          .select()
+          .single()
+      ),
+      PROJECT_NUMERIC_FIELDS
+    );
+
+    await this.client.from("bid_history").delete().eq("project_id", projectId);
+    if (lines.length > 0) {
+      const { error } = await this.client.from("bid_history").insert(
+        lines.map((line) => ({
+          project_id: projectId,
+          bid_item_id: line.bid_item_id,
+          unit_price_bid: line.unit_price_bid,
+          unit_price_awarded: outcome === "won" ? line.unit_price_bid : null,
+          outcome,
+          rates_snapshot: { unit_price_bid: line.unit_price_bid, recorded_at: new Date().toISOString() },
+        }))
+      );
+      if (error) throw new Error(error.message);
+    }
+
+    return project;
   }
 
   async updateProjectLastUsedProfit(projectId: string, profitPct: number) {

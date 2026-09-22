@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import { usingLiveSupabase } from "@/lib/repository";
+import { createClient } from "@/lib/supabase/server";
+import { logoutAction } from "./login/actions";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,12 +21,13 @@ export const metadata: Metadata = {
   description: "DOT roadway bid estimating",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   const live = usingLiveSupabase();
+  const user = live ? (await (await createClient()).auth.getUser()).data.user : null;
   return (
     <html
       lang="en"
@@ -47,13 +50,26 @@ export default function RootLayout({
                 <Link href="/bid-items" className="hover:text-zinc-950 dark:hover:text-white">
                   Bid Item Library
                 </Link>
+                <Link href="/bid-history" className="hover:text-zinc-950 dark:hover:text-white">
+                  Bid History
+                </Link>
               </nav>
             </div>
-            {!live && (
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                Local demo data (no Supabase configured)
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {!live && (
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                  Local demo data (no Supabase configured)
+                </span>
+              )}
+              {user && (
+                <form action={logoutAction} className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span>{user.email}</span>
+                  <button type="submit" className="font-medium text-zinc-600 hover:underline dark:text-zinc-300">
+                    Sign out
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8 print:max-w-none print:px-0 print:py-0">

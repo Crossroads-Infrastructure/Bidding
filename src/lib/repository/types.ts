@@ -4,6 +4,7 @@ import type {
   BidItemLabor,
   BidItemMaterial,
   BidItemRecipe,
+  BidOutcome,
   CompanyDefaults,
   CompanyProfile,
   CrewGroup,
@@ -82,6 +83,11 @@ export interface NewProjectInput {
   dot_or_municipality?: string | null;
   bid_date?: string | null;
   default_profit_pct?: number;
+}
+
+export interface BidOutcomeLineInput {
+  bid_item_id: string;
+  unit_price_bid: number;
 }
 
 export interface DuplicateProjectDetailsInput {
@@ -258,6 +264,17 @@ export interface Repository {
   createProject(input: NewProjectInput): Promise<Project>;
   duplicateProject(sourceProjectId: string, details: DuplicateProjectDetailsInput): Promise<Project>;
   updateProjectStatus(projectId: string, status: Project["status"]): Promise<Project>;
+  // Sets status to won/lost, freezes final_bid_total, and (re)writes the
+  // project's bid_history rows -- one per line, priced at its rounded
+  // rate if one was set, otherwise its raw calculated unit price. Safe to
+  // call again (e.g. correcting a mistake): replaces this project's prior
+  // bid_history rows rather than accumulating duplicates.
+  recordBidOutcome(
+    projectId: string,
+    outcome: BidOutcome,
+    finalBidTotal: number,
+    lines: BidOutcomeLineInput[]
+  ): Promise<Project>;
   updateProjectLastUsedProfit(projectId: string, profitPct: number): Promise<Project>;
   updateProjectClient(projectId: string, client: string | null): Promise<Project>;
 

@@ -130,6 +130,9 @@ export interface Project {
   // Archived projects are hidden from the dashboard's default view but
   // never deleted automatically -- same pattern as the library entities.
   is_active: boolean;
+  // Frozen grand total (rounded rates applied) at the moment status was
+  // set to won/lost -- see Repository.recordBidOutcome. Null until then.
+  final_bid_total: number | null;
 }
 
 export interface ProjectLineItem {

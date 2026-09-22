@@ -107,4 +107,41 @@ describe("smoke test: round 7 features via InMemoryRepository", () => {
     const [reread] = await repo.listProjectLineItems(project.id);
     expect(reread.duration_days).toBe(100);
   });
+
+  it("recordBidOutcome sets status/final_bid_total and writes bid_history, replacing prior rows on re-record", async () => {
+    const repo = new InMemoryRepository();
+    const project = await repo.createProject({ project_name: "Outcome Test" });
+    const recipe = await repo.createBidItem({
+      item_name: "Base course",
+      unit: "TON",
+      item_type: "unit_price",
+      labor: [],
+      equipment: [],
+      materials: [],
+    });
+
+    const won = await repo.recordBidOutcome(project.id, "won", 125_000, [
+      { bid_item_id: recipe.item.id, unit_price_bid: 42.5 },
+    ]);
+    expect(won.status).toBe("won");
+    expect(won.final_bid_total).toBe(125_000);
+
+    let history = await repo.listBidHistory(recipe.item.id);
+    expect(history).toHaveLength(1);
+    expect(history[0].unit_price_bid).toBe(42.5);
+    expect(history[0].outcome).toBe("won");
+
+    // Re-recording (e.g. correcting a mistake) replaces rather than
+    // accumulates rows for this project.
+    const relost = await repo.recordBidOutcome(project.id, "lost", 130_000, [
+      { bid_item_id: recipe.item.id, unit_price_bid: 45 },
+    ]);
+    expect(relost.status).toBe("lost");
+    expect(relost.final_bid_total).toBe(130_000);
+
+    history = await repo.listBidHistory(recipe.item.id);
+    expect(history).toHaveLength(1);
+    expect(history[0].unit_price_bid).toBe(45);
+    expect(history[0].outcome).toBe("lost");
+  });
 });
