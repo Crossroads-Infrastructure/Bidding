@@ -182,6 +182,24 @@ export function LineItemRow(props: LineItemRowProps) {
                 />
                 Subcontracted
               </label>
+              {line.is_subcontracted && (
+                <label className="flex flex-col text-zinc-500">
+                  Subcontracted qty
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder={`all ${line.quantity}`}
+                    defaultValue={line.subcontracted_quantity ?? ""}
+                    onBlur={(e) => {
+                      const v = e.target.value === "" ? null : Number(e.target.value);
+                      onFieldChange({ subcontracted_quantity: v });
+                      onFieldCommit({ subcontracted_quantity: v });
+                    }}
+                    className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                  <span className="mt-0.5 text-[10px] text-zinc-400">blank = all of it</span>
+                </label>
+              )}
               {recipe.item.item_type === "lump_sum" && (
                 <label className="flex flex-col text-zinc-500">
                   # of days
@@ -227,39 +245,55 @@ export function LineItemRow(props: LineItemRowProps) {
               />
             </label>
 
-            {line.is_subcontracted ? (
-              <VendorQuotesPanel
-                projectLineItemId={line.id}
-                projectId={projectId}
-                quotes={vendorQuotes}
-                subMarkupPct={line.sub_markup_pct}
-                onFieldChange={onFieldChange}
-                onFieldCommit={onFieldCommit}
-              />
-            ) : (
-              <BuildupPanel
-                bidItemId={recipe.item.id}
-                recipe={recipe}
-                estimate={estimate}
-                isCustom={isCustom}
-                crewRates={crewRates}
-                equipmentRates={equipmentRates}
-                materials={materials}
-                materialsById={materialsById}
-                materialOverrides={materialOverrides}
-                laborOverrides={laborOverrides}
-                equipmentOverrides={equipmentOverrides}
-                onMaterialOverrideChange={onMaterialOverrideChange}
-                onMaterialOverrideCommit={onMaterialOverrideCommit}
-                onMaterialOverrideClear={onMaterialOverrideClear}
-                onLaborOverrideChange={onLaborOverrideChange}
-                onLaborOverrideCommit={onLaborOverrideCommit}
-                onLaborOverrideClear={onLaborOverrideClear}
-                onEquipmentOverrideChange={onEquipmentOverrideChange}
-                onEquipmentOverrideCommit={onEquipmentOverrideCommit}
-                onEquipmentOverrideClear={onEquipmentOverrideClear}
-                onRecipeChanged={onRecipeChanged}
-              />
+            {!estimate.isFullySubcontracted && (
+              <div className={line.is_subcontracted ? "mb-4" : undefined}>
+                {line.is_subcontracted && (
+                  <h4 className="mb-1 font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Self-performed ({(line.quantity - estimate.subcontractedQuantity).toLocaleString()} {recipe.item.unit})
+                  </h4>
+                )}
+                <BuildupPanel
+                  bidItemId={recipe.item.id}
+                  recipe={recipe}
+                  estimate={estimate}
+                  isCustom={isCustom}
+                  crewRates={crewRates}
+                  equipmentRates={equipmentRates}
+                  materials={materials}
+                  materialsById={materialsById}
+                  materialOverrides={materialOverrides}
+                  laborOverrides={laborOverrides}
+                  equipmentOverrides={equipmentOverrides}
+                  onMaterialOverrideChange={onMaterialOverrideChange}
+                  onMaterialOverrideCommit={onMaterialOverrideCommit}
+                  onMaterialOverrideClear={onMaterialOverrideClear}
+                  onLaborOverrideChange={onLaborOverrideChange}
+                  onLaborOverrideCommit={onLaborOverrideCommit}
+                  onLaborOverrideClear={onLaborOverrideClear}
+                  onEquipmentOverrideChange={onEquipmentOverrideChange}
+                  onEquipmentOverrideCommit={onEquipmentOverrideCommit}
+                  onEquipmentOverrideClear={onEquipmentOverrideClear}
+                  onRecipeChanged={onRecipeChanged}
+                />
+              </div>
+            )}
+
+            {line.is_subcontracted && (
+              <div>
+                {!estimate.isFullySubcontracted && (
+                  <h4 className="mb-1 font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Subcontracted ({estimate.subcontractedQuantity.toLocaleString()} {recipe.item.unit})
+                  </h4>
+                )}
+                <VendorQuotesPanel
+                  projectLineItemId={line.id}
+                  projectId={projectId}
+                  quotes={vendorQuotes}
+                  subMarkupPct={line.sub_markup_pct}
+                  onFieldChange={onFieldChange}
+                  onFieldCommit={onFieldCommit}
+                />
+              </div>
             )}
           </td>
         </tr>

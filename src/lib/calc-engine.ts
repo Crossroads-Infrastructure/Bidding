@@ -341,21 +341,40 @@ export function computeMarkup(baseCost: number, overheadPct: number, profitPct: 
 // Full line item calculation
 // ============================================================
 //
-// Two totals are tracked per self-performed line: preProfitTotal (base +
+// Two totals are tracked per self-performed portion: preProfitTotal (base +
 // company overhead + contingency -- what the Estimate Builder's live total
 // bar shows, since profit isn't decided yet) and the full total including
-// profit (what the Review screen shows). Subcontracted lines skip company
-// overhead/contingency/profit entirely: their cost is the selected vendor
-// quote marked up by the line's own sub_markup_pct, and that's already
-// "final" at both stages (round 2 #8).
+// profit (what the Review screen shows). A subcontracted portion skips
+// company overhead/contingency/profit entirely: its cost is the selected
+// vendor quote marked up by the line's own sub_markup_pct, and that's
+// already "final" at both stages (round 2 #8).
+//
+// A line can split its quantity between the two (round 8): DOT bids often
+// want one item number/unit price even when part of the quantity is
+// self-performed and part is subbed out. resolveSubcontractedQuantity
+// resolves how much of `line.quantity` is subcontracted -- everything
+// else here treats that as just another number, with 0 (pure
+// self-performed) and the full quantity (pure subcontracted, the original
+// all-or-nothing behavior) falling out as the two ends of the same scale
+// rather than separate code paths.
+
+function resolveSubcontractedQuantity(line: ProjectLineItem): number {
+  if (!line.is_subcontracted) return 0;
+  if (line.subcontracted_quantity == null) return line.quantity; // legacy default: fully subcontracted
+  return Math.min(Math.max(line.subcontracted_quantity, 0), line.quantity);
+}
 
 export interface LineItemEstimate {
   lineItemId: string;
   bidItemId: string;
   quantity: number;
-  isSubcontracted: boolean;
-  base: LineItemBaseCost | null; // null for subcontracted lines
-  markup: MarkupBreakdown;
+  isSubcontracted: boolean; // true whenever any portion of the line is subcontracted
+  isFullySubcontracted: boolean; // true when the entire quantity is subcontracted -- no self-performed portion
+  subcontractedQuantity: number; // resolved subcontracted portion of `quantity`, 0 when not subcontracted at all
+  base: LineItemBaseCost | null; // the self-performed portion's cost breakdown; null only when isFullySubcontracted
+  markup: MarkupBreakdown; // self-performed portion's markup only -- the subcontracted portion never gets company overhead/profit/contingency
+  selfPerformedCost: number; // self-performed portion's cost, post-markup
+  subcontractedCost: number; // subcontracted portion's cost (vendor quote x (1 + sub_markup_pct))
   preProfitTotal: number;
   preProfitUnitPrice: number;
   rawTotal: number;
@@ -375,61 +394,55 @@ export function computeLineItemEstimate(
   selectedVendorQuote: SelectedVendorQuote | null = null
 ): LineItemEstimate {
   const item = recipe.item;
+  const subcontractedQuantity = resolveSubcontractedQuantity(line);
+  const selfQuantity = line.quantity - subcontractedQuantity;
 
-  if (line.is_subcontracted) {
-    const vendorAmount = selectedVendorQuote?.quote_amount ?? 0;
-    const markupPct = line.sub_markup_pct ?? 0;
-    const total = vendorAmount * (1 + markupPct);
-    const markup: MarkupBreakdown = {
-      overheadPct: 0,
-      profitPct: 0,
-      contingencyPct: markupPct,
-      overhead: 0,
-      profit: 0,
-      contingency: total - vendorAmount,
-      total,
-    };
-    const rawUnitPrice = line.quantity > 0 ? total / line.quantity : 0;
-    return {
-      lineItemId: line.id,
-      bidItemId: item.id,
-      quantity: line.quantity,
-      isSubcontracted: true,
-      base: null,
-      markup,
-      preProfitTotal: total,
-      preProfitUnitPrice: rawUnitPrice,
-      rawTotal: total,
-      rawUnitPrice,
-      roundedRate: line.manual_rounded_rate,
-      finalTotal: line.manual_rounded_rate != null ? line.manual_rounded_rate * line.quantity : total,
-      selectedVendorQuote,
-    };
+  const vendorAmount = selectedVendorQuote?.quote_amount ?? 0;
+  const subMarkupPct = line.sub_markup_pct ?? 0;
+  const subcontractedCost = subcontractedQuantity > 0 ? vendorAmount * (1 + subMarkupPct) : 0;
+
+  let base: LineItemBaseCost | null = null;
+  let markup: MarkupBreakdown = {
+    overheadPct: 0,
+    profitPct: 0,
+    contingencyPct: 0,
+    overhead: 0,
+    profit: 0,
+    contingency: 0,
+    total: 0,
+  };
+  if (selfQuantity > 0) {
+    base = computeLineItemBaseCost(recipe, selfQuantity, rates, overrides, line.duration_days);
+    const overheadPct = resolveOverheadPct(line, item, company);
+    const contingencyPct = resolveContingencyPct(line, item, company);
+    const profitPct = resolveProfitPct(line, item, liveProfitPct);
+    markup = computeMarkup(base.baseCost, overheadPct, profitPct, contingencyPct);
   }
 
-  const base = computeLineItemBaseCost(recipe, line.quantity, rates, overrides, line.duration_days);
-  const overheadPct = resolveOverheadPct(line, item, company);
-  const contingencyPct = resolveContingencyPct(line, item, company);
-  const profitPct = resolveProfitPct(line, item, liveProfitPct);
-  const markup = computeMarkup(base.baseCost, overheadPct, profitPct, contingencyPct);
-  const preProfitTotal = base.baseCost + markup.overhead + markup.contingency;
-  const rawUnitPrice = line.quantity > 0 ? markup.total / line.quantity : 0;
+  const selfPerformedCost = markup.total;
+  const preProfitTotal = (base ? base.baseCost + markup.overhead + markup.contingency : 0) + subcontractedCost;
+  const rawTotal = selfPerformedCost + subcontractedCost;
+  const rawUnitPrice = line.quantity > 0 ? rawTotal / line.quantity : 0;
   const preProfitUnitPrice = line.quantity > 0 ? preProfitTotal / line.quantity : 0;
 
   return {
     lineItemId: line.id,
     bidItemId: item.id,
     quantity: line.quantity,
-    isSubcontracted: false,
+    isSubcontracted: subcontractedQuantity > 0,
+    isFullySubcontracted: subcontractedQuantity > 0 && selfQuantity <= 0,
+    subcontractedQuantity,
     base,
     markup,
+    selfPerformedCost,
+    subcontractedCost,
     preProfitTotal,
     preProfitUnitPrice,
-    rawTotal: markup.total,
+    rawTotal,
     rawUnitPrice,
     roundedRate: line.manual_rounded_rate,
-    finalTotal: line.manual_rounded_rate != null ? line.manual_rounded_rate * line.quantity : markup.total,
-    selectedVendorQuote: null,
+    finalTotal: line.manual_rounded_rate != null ? line.manual_rounded_rate * line.quantity : rawTotal,
+    selectedVendorQuote: subcontractedQuantity > 0 ? selectedVendorQuote : null,
   };
 }
 
@@ -473,19 +486,32 @@ export function computeProjectEstimate(
     );
   });
 
-  const selfPerformedLines = estimates.filter((e) => !e.isSubcontracted);
-  const subcontractedLines = estimates.filter((e) => e.isSubcontracted);
+  // A line's finalTotal (raw, or the manual rounded-rate override) is
+  // split between the self-performed and subcontracted buckets in
+  // proportion to their raw (pre-rounding) cost share -- for a pure
+  // self-performed or pure subcontracted line that share is just 100%/0%,
+  // so this generalizes the old strict filter-by-isSubcontracted split
+  // without changing its result for either; it only matters for a line
+  // that splits its quantity between both (round 8).
+  let selfPerformedTotal = 0;
+  let subcontractedTotal = 0;
+  for (const e of estimates) {
+    const rawTotal = e.selfPerformedCost + e.subcontractedCost;
+    const selfShare = rawTotal > 0 ? e.selfPerformedCost / rawTotal : e.isSubcontracted ? 0 : 1;
+    selfPerformedTotal += e.finalTotal * selfShare;
+    subcontractedTotal += e.finalTotal * (1 - selfShare);
+  }
 
   const selfPerformed = {
-    totalBaseCost: sum(selfPerformedLines.map((e) => e.base?.baseCost ?? 0)),
-    totalOverhead: sum(selfPerformedLines.map((e) => e.markup.overhead)),
-    totalContingency: sum(selfPerformedLines.map((e) => e.markup.contingency)),
-    totalProfit: sum(selfPerformedLines.map((e) => e.markup.profit)),
-    preProfitTotal: sum(selfPerformedLines.map((e) => e.preProfitTotal)),
-    total: sum(selfPerformedLines.map((e) => e.finalTotal)),
+    totalBaseCost: sum(estimates.map((e) => e.base?.baseCost ?? 0)),
+    totalOverhead: sum(estimates.map((e) => e.markup.overhead)),
+    totalContingency: sum(estimates.map((e) => e.markup.contingency)),
+    totalProfit: sum(estimates.map((e) => e.markup.profit)),
+    preProfitTotal: sum(estimates.map((e) => (e.base ? e.base.baseCost + e.markup.overhead + e.markup.contingency : 0))),
+    total: selfPerformedTotal,
   };
   const subcontracted = {
-    total: sum(subcontractedLines.map((e) => e.finalTotal)),
+    total: subcontractedTotal,
   };
 
   return {

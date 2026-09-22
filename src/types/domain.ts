@@ -154,6 +154,14 @@ export interface ProjectLineItem {
   // the selected row in project_line_item_vendor_quotes feeds the calc.
   is_subcontracted: boolean;
   sub_markup_pct: number | null;
+  // Round 8: DOT bids often want ONE item number/unit price even when part
+  // of the quantity is self-performed and part is subbed out. Null (with
+  // is_subcontracted true) means "fully subcontracted", the original
+  // all-or-nothing behavior; a number less than `quantity` splits it --
+  // (quantity - subcontracted_quantity) is priced through the recipe,
+  // subcontracted_quantity through the vendor quote, blended into one
+  // line. Ignored when is_subcontracted is false.
+  subcontracted_quantity: number | null;
   // Round 6: for lump-sum items (quantity is always 1, so it can't convey
   // duration) -- scales every labor/equipment hour on this line by this
   // many days, on top of quantity/headcount. Unused (treated as 1) for

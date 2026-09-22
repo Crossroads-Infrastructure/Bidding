@@ -468,7 +468,9 @@ function ReviewLineRow({
             {line.item_number_override ? ` · #${line.item_number_override}` : ""}
             {estimate.isSubcontracted && (
               <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-                subcontracted
+                {estimate.isFullySubcontracted
+                  ? "subcontracted"
+                  : `partially subcontracted (${estimate.subcontractedQuantity.toLocaleString()} ${recipe.item.unit})`}
               </span>
             )}
             {outsideRange && range && (
@@ -503,9 +505,9 @@ function ReviewLineRow({
       {expanded && (
         <tr>
           <td colSpan={6} className="bg-zinc-50 px-4 py-3 dark:bg-zinc-800/40">
-            {!estimate.isSubcontracted && (
+            {!estimate.isFullySubcontracted && (
               <label className="mb-3 flex w-40 flex-col text-xs text-zinc-500">
-                Profit override % (this item)
+                Profit override % {estimate.isSubcontracted ? "(self-performed portion)" : "(this item)"}
                 <input
                   type="number"
                   step="0.1"
@@ -516,10 +518,12 @@ function ReviewLineRow({
                 />
               </label>
             )}
-            {estimate.base ? (
+            {estimate.base && (
               <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
                 <div>
-                  <h4 className="mb-1 font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Labor</h4>
+                  <h4 className="mb-1 font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Labor {estimate.isSubcontracted && `(self-performed ${estimate.quantity - estimate.subcontractedQuantity} of ${estimate.quantity})`}
+                  </h4>
                   {estimate.base.labor.map((l) => (
                     <div key={l.crew_role_id} className="flex justify-between">
                       <span>{l.name}</span>
@@ -546,9 +550,11 @@ function ReviewLineRow({
                   ))}
                 </div>
               </div>
-            ) : (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Subcontracted: {estimate.selectedVendorQuote?.vendor_name ?? "no vendor selected"} —{" "}
+            )}
+            {estimate.isSubcontracted && (
+              <p className={`text-xs text-zinc-500 dark:text-zinc-400 ${estimate.base ? "mt-3" : ""}`}>
+                Subcontracted{estimate.base ? ` (${estimate.subcontractedQuantity} of ${estimate.quantity})` : ""}:{" "}
+                {estimate.selectedVendorQuote?.vendor_name ?? "no vendor selected"} —{" "}
                 {estimate.selectedVendorQuote ? formatCurrency(estimate.selectedVendorQuote.quote_amount) : "—"}
               </p>
             )}

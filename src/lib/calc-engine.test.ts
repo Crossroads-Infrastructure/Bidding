@@ -226,6 +226,7 @@ function makeLine(overrides: Partial<ProjectLineItem> = {}): ProjectLineItem {
     item_name_override: null,
     is_subcontracted: false,
     sub_markup_pct: null,
+    subcontracted_quantity: null,
     ...overrides,
   };
 }
@@ -387,6 +388,67 @@ describe("computeLineItemEstimate: subcontracted", () => {
     expect(estimate.isSubcontracted).toBe(true);
     expect(estimate.rawTotal).toBeCloseTo(5000);
   });
+
+  it("null subcontracted_quantity still means fully subcontracted (legacy default)", () => {
+    const { recipe, rates } = makeRecipe();
+    const company = makeCompany();
+    const line = makeLine({ is_subcontracted: true, subcontracted_quantity: null, sub_markup_pct: 0 });
+    const quote = { id: "q1", vendor_name: "V", quote_amount: 5000 };
+    const estimate = computeLineItemEstimate(line, recipe, company, 0.1, rates, {}, quote);
+    expect(estimate.isFullySubcontracted).toBe(true);
+    expect(estimate.base).toBeNull();
+  });
+});
+
+describe("computeLineItemEstimate: partial subcontracting", () => {
+  it("blends a self-performed portion (recipe-priced) with a subcontracted portion (vendor-priced) on one line", () => {
+    const { recipe, rates } = makeRecipe();
+    const company = makeCompany({ overhead_pct: 0.1, contingency_pct: 0.05 });
+    const line = makeLine({ quantity: 100, is_subcontracted: true, subcontracted_quantity: 40, sub_markup_pct: 0.1 });
+    const quote = { id: "q1", vendor_name: "V", quote_amount: 5000 };
+
+    const estimate = computeLineItemEstimate(line, recipe, company, 0.1, rates, {}, quote);
+
+    const expectedBase = computeLineItemBaseCost(recipe, 60, rates); // 100 - 40 subcontracted
+    const expectedMarkup = computeMarkup(expectedBase.baseCost, 0.1, 0.1, 0.05);
+    const expectedSubTotal = 5000 * 1.1;
+
+    expect(estimate.isSubcontracted).toBe(true);
+    expect(estimate.isFullySubcontracted).toBe(false);
+    expect(estimate.subcontractedQuantity).toBe(40);
+    expect(estimate.base).not.toBeNull();
+    expect(estimate.base!.baseCost).toBeCloseTo(expectedBase.baseCost);
+    expect(estimate.selfPerformedCost).toBeCloseTo(expectedMarkup.total);
+    expect(estimate.subcontractedCost).toBeCloseTo(expectedSubTotal);
+    expect(estimate.rawTotal).toBeCloseTo(expectedMarkup.total + expectedSubTotal);
+    expect(estimate.finalTotal).toBeCloseTo(estimate.rawTotal);
+  });
+
+  it("clamps a subcontracted_quantity above the line's quantity to fully subcontracted", () => {
+    const { recipe, rates } = makeRecipe();
+    const company = makeCompany();
+    const line = makeLine({ quantity: 50, is_subcontracted: true, subcontracted_quantity: 999, sub_markup_pct: 0 });
+    const quote = { id: "q1", vendor_name: "V", quote_amount: 1000 };
+    const estimate = computeLineItemEstimate(line, recipe, company, 0.1, rates, {}, quote);
+    expect(estimate.subcontractedQuantity).toBe(50);
+    expect(estimate.isFullySubcontracted).toBe(true);
+    expect(estimate.base).toBeNull();
+  });
+
+  it("a manual rounded rate on a partial line still blends both portions into one unit price", () => {
+    const { recipe, rates } = makeRecipe();
+    const company = makeCompany();
+    const line = makeLine({
+      quantity: 100,
+      is_subcontracted: true,
+      subcontracted_quantity: 40,
+      sub_markup_pct: 0,
+      manual_rounded_rate: 75,
+    });
+    const quote = { id: "q1", vendor_name: "V", quote_amount: 5000 };
+    const estimate = computeLineItemEstimate(line, recipe, company, 0.1, rates, {}, quote);
+    expect(estimate.finalTotal).toBeCloseTo(75 * 100);
+  });
 });
 
 describe("computeProjectEstimate: self-performed vs subcontracted split", () => {
@@ -431,6 +493,43 @@ describe("computeProjectEstimate: self-performed vs subcontracted split", () => 
     expect(estimate.grandTotalPreProfit).toBeCloseTo(
       estimate.selfPerformed.preProfitTotal + estimate.subcontracted.total
     );
+  });
+
+  it("splits a partial line's contribution across both buckets instead of dumping it entirely into one", () => {
+    const { recipe, rates } = makeRecipe();
+    const company = makeCompany({ overhead_pct: 0.1, contingency_pct: 0.05 });
+
+    const partialLine = makeLine({
+      id: "line-partial",
+      quantity: 100,
+      is_subcontracted: true,
+      subcontracted_quantity: 40,
+      sub_markup_pct: 0.1,
+    });
+
+    const recipesByBidItemId = new Map([[recipe.item.id, recipe]]);
+    const selectedQuotes = new Map([["line-partial", { id: "q1", vendor_name: "V", quote_amount: 5000 }]]);
+
+    const estimate = computeProjectEstimate(
+      [partialLine],
+      recipesByBidItemId,
+      company,
+      0.1,
+      rates,
+      new Map(),
+      selectedQuotes
+    );
+
+    const line = estimate.lines[0];
+    expect(line.selfPerformedCost).toBeGreaterThan(0);
+    expect(line.subcontractedCost).toBeGreaterThan(0);
+
+    // Both buckets see a share of this one line, not all-or-nothing.
+    expect(estimate.selfPerformed.total).toBeCloseTo(line.selfPerformedCost);
+    expect(estimate.subcontracted.total).toBeCloseTo(line.subcontractedCost);
+    expect(estimate.selfPerformed.totalBaseCost).toBeCloseTo(line.base!.baseCost);
+    expect(estimate.grandTotal).toBeCloseTo(estimate.selfPerformed.total + estimate.subcontracted.total);
+    expect(estimate.grandTotal).toBeCloseTo(line.finalTotal);
   });
 
   it("an overridden self-performed line is priced at its own rate and excluded from the shared default pool", () => {

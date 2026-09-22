@@ -108,6 +108,35 @@ describe("smoke test: round 7 features via InMemoryRepository", () => {
     expect(reread.duration_days).toBe(100);
   });
 
+  it("subcontracted_quantity survives create -> update -> read round trip, and duplicateProject copies it", async () => {
+    const repo = new InMemoryRepository();
+    const project = await repo.createProject({ project_name: "Partial Sub Test" });
+    const recipe = await repo.createBidItem({
+      item_name: "Paving",
+      unit: "SY",
+      item_type: "unit_price",
+      labor: [],
+      equipment: [],
+      materials: [],
+    });
+    const line = await repo.addProjectLineItem({
+      project_id: project.id,
+      bid_item_id: recipe.item.id,
+      quantity: 100,
+    });
+    expect(line.subcontracted_quantity).toBeNull();
+
+    const updated = await repo.updateProjectLineItem(line.id, {
+      is_subcontracted: true,
+      subcontracted_quantity: 40,
+    });
+    expect(updated.subcontracted_quantity).toBe(40);
+
+    const duplicate = await repo.duplicateProject(project.id, { project_name: "Partial Sub Test (copy)" });
+    const [copiedLine] = await repo.listProjectLineItems(duplicate.id);
+    expect(copiedLine.subcontracted_quantity).toBe(40);
+  });
+
   it("recordBidOutcome sets status/final_bid_total and writes bid_history, replacing prior rows on re-record", async () => {
     const repo = new InMemoryRepository();
     const project = await repo.createProject({ project_name: "Outcome Test" });

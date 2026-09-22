@@ -120,6 +120,7 @@ export interface ProjectLineItemUpdate {
   item_name_override?: string | null;
   is_subcontracted?: boolean;
   sub_markup_pct?: number | null;
+  subcontracted_quantity?: number | null;
   duration_days?: number | null;
 }
 

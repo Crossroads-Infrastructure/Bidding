@@ -118,6 +118,8 @@ const PROJECT_LINE_ITEM_NUMERIC_FIELDS: (keyof ProjectLineItem)[] = [
   "override_contingency_pct",
   "manual_rounded_rate",
   "duration_days",
+  "sub_markup_pct",
+  "subcontracted_quantity",
 ];
 const MATERIAL_OVERRIDE_NUMERIC_FIELDS: (keyof ProjectLineItemMaterialOverride)[] = [
   "override_rate",
@@ -962,6 +964,7 @@ export class SupabaseRepository implements Repository {
             item_name_override: null,
             is_subcontracted: sourceLine.is_subcontracted,
             sub_markup_pct: sourceLine.sub_markup_pct,
+            subcontracted_quantity: sourceLine.subcontracted_quantity,
             duration_days: sourceLine.duration_days,
           })
           .select()
