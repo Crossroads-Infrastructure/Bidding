@@ -290,6 +290,7 @@ export function LineItemRow(props: LineItemRowProps) {
                   projectId={projectId}
                   quotes={vendorQuotes}
                   subMarkupPct={line.sub_markup_pct}
+                  estimate={estimate}
                   onFieldChange={onFieldChange}
                   onFieldCommit={onFieldCommit}
                 />
@@ -372,6 +373,7 @@ function BuildupPanel({
               <th className="py-1 font-medium">Role</th>
               <th className="py-1 font-medium">Hours/unit</th>
               <th className="py-1 font-medium">Headcount</th>
+              <th className="py-1 font-medium">Cost</th>
               <th className="py-1 font-medium" />
             </tr>
           </thead>
@@ -420,6 +422,7 @@ function BuildupPanel({
                       className="w-16 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
                     />
                   </td>
+                  <td className="py-1">{formatCurrency(laborEstimate?.cost ?? 0)}</td>
                   <td className="py-1">
                     {isCustom ? (
                       <button
@@ -447,9 +450,18 @@ function BuildupPanel({
             })}
             {recipe.labor.length === 0 && (
               <tr>
-                <td colSpan={4} className="py-1 text-zinc-400">
+                <td colSpan={5} className="py-1 text-zinc-400">
                   No labor lines.
                 </td>
+              </tr>
+            )}
+            {recipe.labor.length > 0 && (
+              <tr className="border-t border-zinc-200 font-medium dark:border-zinc-700">
+                <td colSpan={3} className="py-1 text-right">
+                  Labor total
+                </td>
+                <td className="py-1">{formatCurrency(estimate.base?.laborCost ?? 0)}</td>
+                <td />
               </tr>
             )}
           </tbody>
@@ -472,6 +484,7 @@ function BuildupPanel({
             <tr>
               <th className="py-1 font-medium">Equipment</th>
               <th className="py-1 font-medium">Hours/unit</th>
+              <th className="py-1 font-medium">Cost</th>
               <th className="py-1 font-medium" />
             </tr>
           </thead>
@@ -501,6 +514,7 @@ function BuildupPanel({
                       className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
                     />
                   </td>
+                  <td className="py-1">{formatCurrency(equipEstimate?.cost ?? 0)}</td>
                   <td className="py-1">
                     {isCustom ? (
                       <button
@@ -528,9 +542,18 @@ function BuildupPanel({
             })}
             {recipe.equipment.length === 0 && (
               <tr>
-                <td colSpan={3} className="py-1 text-zinc-400">
+                <td colSpan={4} className="py-1 text-zinc-400">
                   No equipment lines.
                 </td>
+              </tr>
+            )}
+            {recipe.equipment.length > 0 && (
+              <tr className="border-t border-zinc-200 font-medium dark:border-zinc-700">
+                <td colSpan={2} className="py-1 text-right">
+                  Equipment total
+                </td>
+                <td className="py-1">{formatCurrency(estimate.base?.equipmentCost ?? 0)}</td>
+                <td />
               </tr>
             )}
           </tbody>
@@ -551,6 +574,7 @@ function BuildupPanel({
                 <th className="py-1 font-medium">Material</th>
                 <th className="py-1 font-medium">Qty</th>
                 <th className="py-1 font-medium">Rate</th>
+                <th className="py-1 font-medium">Cost</th>
                 <th className="py-1 font-medium" />
               </tr>
             </thead>
@@ -590,6 +614,7 @@ function BuildupPanel({
                         className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
                       />
                     </td>
+                    <td className="py-1">{formatCurrency(m.cost)}</td>
                     <td className="py-1">
                       {isCustom ? (
                         recipeRow && (
@@ -617,11 +642,41 @@ function BuildupPanel({
                   </tr>
                 );
               })}
+              <tr className="border-t border-zinc-200 font-medium dark:border-zinc-700">
+                <td colSpan={3} className="py-1 text-right">
+                  Materials total
+                </td>
+                <td className="py-1">{formatCurrency(estimate.base.materialCost)}</td>
+                <td />
+              </tr>
             </tbody>
           </table>
         ) : (
           <p className="text-zinc-400">No material lines.</p>
         )}
+      </div>
+
+      <div className="max-w-2xl rounded border border-zinc-200 p-3 dark:border-zinc-700">
+        <div className="flex justify-between">
+          <span className="text-zinc-500 dark:text-zinc-400">Base cost (self-performed)</span>
+          <span>{formatCurrency(estimate.base?.baseCost ?? 0)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-zinc-500 dark:text-zinc-400">
+            Overhead + contingency + profit (preview)
+          </span>
+          <span>{formatCurrency(estimate.markup.overhead + estimate.markup.contingency + estimate.markup.profit)}</span>
+        </div>
+        {estimate.isSubcontracted && (
+          <div className="flex justify-between">
+            <span className="text-zinc-500 dark:text-zinc-400">Subcontracted portion</span>
+            <span>{formatCurrency(estimate.subcontractedCost)}</span>
+          </div>
+        )}
+        <div className="mt-1 flex justify-between border-t border-zinc-200 pt-1 font-semibold dark:border-zinc-700">
+          <span>Line total (preview)</span>
+          <span>{formatCurrency(estimate.finalTotal)}</span>
+        </div>
       </div>
     </div>
   );
@@ -826,6 +881,7 @@ function VendorQuotesPanel({
   projectId,
   quotes,
   subMarkupPct,
+  estimate,
   onFieldChange,
   onFieldCommit,
 }: {
@@ -833,6 +889,7 @@ function VendorQuotesPanel({
   projectId: string;
   quotes: ProjectLineItemVendorQuote[];
   subMarkupPct: number | null;
+  estimate: LineItemEstimate;
   onFieldChange: (patch: Partial<ProjectLineItem>) => void;
   onFieldCommit: (patch: Partial<ProjectLineItem>) => void;
 }) {
@@ -938,6 +995,19 @@ function VendorQuotesPanel({
         >
           Add quote
         </button>
+      </div>
+
+      <div className="mt-3 max-w-2xl rounded border border-zinc-200 p-3 dark:border-zinc-700">
+        <div className="flex justify-between">
+          <span className="text-zinc-500 dark:text-zinc-400">Subcontracted total</span>
+          <span>{formatCurrency(estimate.subcontractedCost)}</span>
+        </div>
+        {estimate.isFullySubcontracted && (
+          <div className="mt-1 flex justify-between border-t border-zinc-200 pt-1 font-semibold dark:border-zinc-700">
+            <span>Line total (preview)</span>
+            <span>{formatCurrency(estimate.finalTotal)}</span>
+          </div>
+        )}
       </div>
     </div>
   );
