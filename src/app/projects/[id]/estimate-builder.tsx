@@ -29,6 +29,7 @@ import {
   setEquipmentOverrideAction,
   setLaborOverrideAction,
   setMaterialOverrideAction,
+  updateProjectLastUsedProfitAction,
   updateProjectLineItemAction,
   updateProjectStatusAction,
 } from "../../actions";
@@ -73,6 +74,7 @@ export function EstimateBuilder({
 }) {
   const router = useRouter();
   const [status, setStatus] = useState(project.status);
+  const [liveProfitPct, setLiveProfitPct] = useState(project.default_profit_pct * 100);
   const [lineItems, setLineItems] = useState(initialLineItems);
   const [recipesByBidItemId, setRecipesByBidItemId] = useState(recipesByBidItemIdProp);
   const [expandedLine, setExpandedLine] = useState<string | null>(null);
@@ -146,13 +148,13 @@ export function EstimateBuilder({
         lineItems,
         recipesMap,
         companyDefaults,
-        project.default_profit_pct,
+        liveProfitPct / 100,
         rateContext,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         overridesByLineId as any,
         selectedVendorQuoteByLineId
       ),
-    [lineItems, recipesMap, companyDefaults, project.default_profit_pct, rateContext, overridesByLineId, selectedVendorQuoteByLineId]
+    [lineItems, recipesMap, companyDefaults, liveProfitPct, rateContext, overridesByLineId, selectedVendorQuoteByLineId]
   );
   const estimateByLineId = useMemo(() => new Map(estimate.lines.map((l) => [l.lineItemId, l])), [estimate.lines]);
 
@@ -228,6 +230,23 @@ export function EstimateBuilder({
             ))}
           </select>
         </div>
+      </div>
+
+      <div className="mb-6 flex items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <label className="flex flex-col text-sm">
+          Profit %{" "}
+          <span className="text-xs font-normal text-zinc-500">
+            (live — drives the &quot;Preview (w/ profit)&quot; column below and the starting bid price on Review)
+          </span>
+          <input
+            type="number"
+            step="0.1"
+            value={liveProfitPct}
+            onChange={(e) => setLiveProfitPct(Number(e.target.value))}
+            onBlur={() => updateProjectLastUsedProfitAction(project.id, liveProfitPct / 100)}
+            className="w-32 rounded border border-zinc-300 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+        </label>
       </div>
 
       <div className="mb-6 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -320,6 +339,7 @@ export function EstimateBuilder({
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
             <tr>
+              <th className="px-4 py-2 font-medium">Item #</th>
               <th className="px-4 py-2 font-medium">Item</th>
               <th className="px-4 py-2 font-medium">Qty</th>
               <th className="px-4 py-2 font-medium">Unit price (pre-profit)</th>
@@ -394,7 +414,7 @@ export function EstimateBuilder({
             })}
             {lineItems.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
                   No line items yet. Add a bid item above to start the estimate.
                 </td>
               </tr>

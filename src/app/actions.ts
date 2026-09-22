@@ -67,7 +67,15 @@ export async function updateProjectStatusAction(
 
 export async function updateProjectLastUsedProfitAction(projectId: string, profitPct: number) {
   const project = await getRepository().updateProjectLastUsedProfit(projectId, profitPct);
+  revalidatePath(`/projects/${projectId}`);
   revalidatePath(`/projects/${projectId}/review`);
+  return project;
+}
+
+export async function updateProjectClientAction(projectId: string, client: string | null) {
+  const project = await getRepository().updateProjectClient(projectId, client);
+  revalidatePath(`/projects/${projectId}/quote`);
+  revalidatePath("/");
   return project;
 }
 
@@ -483,6 +491,14 @@ export async function removeProjectDocumentAction(id: string, projectId: string)
 
 export async function upsertCompanyProfileAction(input: CompanyProfileInput) {
   const profile = await getRepository().upsertCompanyProfile(input);
+  revalidatePath("/rates");
+  return profile;
+}
+
+export async function uploadCompanyLogoAction(formData: FormData) {
+  const file = formData.get("file") as File;
+  const content = new Uint8Array(await file.arrayBuffer());
+  const profile = await getRepository().uploadCompanyLogo(content, file.name);
   revalidatePath("/rates");
   return profile;
 }

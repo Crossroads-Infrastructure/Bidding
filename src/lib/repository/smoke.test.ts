@@ -50,6 +50,25 @@ describe("smoke test: round 7 features via InMemoryRepository", () => {
     expect(await repo.getProject(project.id)).toBeUndefined();
   });
 
+  it("updateProjectClient sets the Quote screen's editable Bid To value", async () => {
+    const repo = new InMemoryRepository();
+    const project = await repo.createProject({ project_name: "Client Test" });
+    expect(project.client).toBeNull();
+    const updated = await repo.updateProjectClient(project.id, "ABC Construction");
+    expect(updated.client).toBe("ABC Construction");
+    expect((await repo.getProject(project.id))?.client).toBe("ABC Construction");
+  });
+
+  it("uploadCompanyLogo sets logo_url", async () => {
+    // Note: InMemoryRepository backs onto a module-level singleton store
+    // (intentional -- see in-memory.ts), so company_profile may already
+    // exist from an earlier test in this file; this only asserts the
+    // upload itself works, not the empty-state case.
+    const repo = new InMemoryRepository();
+    const profile = await repo.uploadCompanyLogo(new Uint8Array([1, 2, 3]), "logo.png");
+    expect(profile.logo_url).toContain("data:image");
+  });
+
   it("duration_days survives create -> update -> read round trip on a project line item", async () => {
     const repo = new InMemoryRepository();
     const project = await repo.createProject({ project_name: "Duration Test" });

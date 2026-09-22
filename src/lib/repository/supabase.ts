@@ -1044,6 +1044,15 @@ export class SupabaseRepository implements Repository {
     );
   }
 
+  async updateProjectClient(projectId: string, client: string | null) {
+    return coerceNumeric(
+      unwrap<Project>(
+        await this.client.from("projects").update({ client }).eq("id", projectId).select().single()
+      ),
+      PROJECT_NUMERIC_FIELDS
+    );
+  }
+
   // ---------------- Project line items ----------------
 
   async listProjectLineItems(projectId: string) {
@@ -1402,6 +1411,35 @@ export class SupabaseRepository implements Repository {
     }
     return unwrap<CompanyProfile>(
       await this.client.from("company_profile").insert(input).select().single()
+    );
+  }
+
+  async uploadCompanyLogo(content: Uint8Array, fileName: string) {
+    const path = `company/logo-${Date.now()}-${fileName}`;
+    const { error: uploadError } = await this.client.storage
+      .from(DOCUMENTS_BUCKET)
+      .upload(path, content, { contentType: "application/octet-stream", upsert: true });
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data: publicUrl } = this.client.storage.from(DOCUMENTS_BUCKET).getPublicUrl(path);
+
+    const existing = await this.getCompanyProfile();
+    if (existing) {
+      return unwrap<CompanyProfile>(
+        await this.client
+          .from("company_profile")
+          .update({ logo_url: publicUrl.publicUrl, updated_at: new Date().toISOString() })
+          .eq("id", existing.id)
+          .select()
+          .single()
+      );
+    }
+    return unwrap<CompanyProfile>(
+      await this.client
+        .from("company_profile")
+        .insert({ company_name: "", logo_url: publicUrl.publicUrl })
+        .select()
+        .single()
     );
   }
 

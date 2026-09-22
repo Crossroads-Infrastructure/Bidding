@@ -41,6 +41,7 @@ import {
   restoreEquipmentRateAction,
   restoreMaterialAction,
   updateCrewGroupMemberAction,
+  uploadCompanyLogoAction,
   upsertCompanyProfileAction,
 } from "../actions";
 
@@ -115,8 +116,10 @@ export function RateLibrary({
 }
 
 function CompanyProfileCard({ companyProfile }: { companyProfile: CompanyProfile | undefined }) {
+  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
+  const [logoPending, setLogoPending] = useState(false);
   const [form, setForm] = useState({
     company_name: companyProfile?.company_name ?? "",
     address_line1: companyProfile?.address_line1 ?? "",
@@ -147,6 +150,35 @@ function CompanyProfileCard({ companyProfile }: { companyProfile: CompanyProfile
         Shown on the Quote screen&apos;s header and footer -- name, address, contact info, certification tagline,
         and how many days a quote stays valid.
       </p>
+      <div className="mb-3 flex items-center gap-3">
+        {companyProfile?.logo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={companyProfile.logo_url} alt="Company logo" className="h-14 w-auto rounded border border-zinc-200 dark:border-zinc-700" />
+        ) : (
+          <div className="flex h-14 w-14 items-center justify-center rounded border border-dashed border-zinc-300 text-xs text-zinc-400 dark:border-zinc-700">
+            No logo
+          </div>
+        )}
+        <label className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
+          {logoPending ? "Uploading…" : companyProfile?.logo_url ? "Replace logo" : "Upload logo"}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={logoPending}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setLogoPending(true);
+              const formData = new FormData();
+              formData.set("file", file);
+              await uploadCompanyLogoAction(formData);
+              setLogoPending(false);
+              router.refresh();
+            }}
+          />
+        </label>
+      </div>
       {!editing ? (
         companyProfile ? (
           <div className="text-sm">

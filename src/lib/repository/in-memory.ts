@@ -768,6 +768,13 @@ export class InMemoryRepository implements Repository {
     return project;
   }
 
+  async updateProjectClient(projectId: string, client: string | null) {
+    const project = store.projects.find((p) => p.id === projectId);
+    if (!project) throw new Error(`project not found: ${projectId}`);
+    project.client = client;
+    return project;
+  }
+
   // ---------------- Project line items ----------------
 
   async listProjectLineItems(projectId: string) {
@@ -1018,9 +1025,34 @@ export class InMemoryRepository implements Repository {
       contact_email: input.contact_email ?? null,
       certification_tagline: input.certification_tagline ?? null,
       quote_validity_days: input.quote_validity_days ?? 30,
+      logo_url: null,
     };
     store.companyProfile.push(created);
     return created;
+  }
+
+  async uploadCompanyLogo(content: Uint8Array, _fileName: string) {
+    const base64 = Buffer.from(content).toString("base64");
+    const logoUrl = `data:image/*;base64,${base64}`;
+    let profile = store.companyProfile[0];
+    if (!profile) {
+      profile = {
+        id: randomUUID(),
+        company_name: "",
+        address_line1: null,
+        city_state_zip: null,
+        contact_name: null,
+        contact_phone: null,
+        contact_email: null,
+        certification_tagline: null,
+        quote_validity_days: 30,
+        logo_url: logoUrl,
+      };
+      store.companyProfile.push(profile);
+    } else {
+      profile.logo_url = logoUrl;
+    }
+    return profile;
   }
 
   // ---------------- Inclusion/exclusion bank + per-project copies ----------------

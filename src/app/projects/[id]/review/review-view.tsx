@@ -28,7 +28,6 @@ import {
   addProjectInclusionAction,
   removeProjectInclusionAction,
   updateProjectInclusionAction,
-  updateProjectLastUsedProfitAction,
   updateProjectLineItemAction,
 } from "../../../actions";
 
@@ -75,7 +74,6 @@ export function ReviewView({
   inclusionBankItems: InclusionExclusionBankItem[];
   projectInclusions: ProjectInclusion[];
 }) {
-  const [liveProfitPct, setLiveProfitPct] = useState(project.default_profit_pct * 100);
   const [lineItemsState, setLineItemsState] = useState(lineItems);
   const [expandedLine, setExpandedLine] = useState<string | null>(null);
 
@@ -115,13 +113,13 @@ export function ReviewView({
         lineItemsState,
         recipesMap,
         companyDefaults,
-        liveProfitPct / 100,
+        project.default_profit_pct,
         rateContext,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         overridesByLineId as any,
         selectedVendorQuoteByLineId
       ),
-    [lineItemsState, recipesMap, companyDefaults, liveProfitPct, rateContext, overridesByLineId, selectedVendorQuoteByLineId]
+    [lineItemsState, recipesMap, companyDefaults, project.default_profit_pct, rateContext, overridesByLineId, selectedVendorQuoteByLineId]
   );
   const estimateByLineId = useMemo(() => new Map(estimate.lines.map((l) => [l.lineItemId, l])), [estimate.lines]);
 
@@ -156,18 +154,18 @@ export function ReviewView({
         </div>
       </div>
 
-      <div className="mb-6 flex items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <label className="flex flex-col text-sm">
-          Profit % <span className="text-xs font-normal text-zinc-500">(live — applies to all self-performed items unless overridden below)</span>
-          <input
-            type="number"
-            step="0.1"
-            value={liveProfitPct}
-            onChange={(e) => setLiveProfitPct(Number(e.target.value))}
-            onBlur={() => updateProjectLastUsedProfitAction(project.id, liveProfitPct / 100)}
-            className="w-32 rounded border border-zinc-300 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800"
-          />
-        </label>
+      <div className="mb-6 flex items-center gap-2 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <span className="text-zinc-500 dark:text-zinc-400">Profit %:</span>
+        <span className="font-medium">{(project.default_profit_pct * 100).toFixed(1)}%</span>
+        <Link
+          href={`/projects/${project.id}`}
+          className="ml-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+        >
+          set on Estimate Builder
+        </Link>
+        <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+          (applies to all self-performed items unless overridden below)
+        </span>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">

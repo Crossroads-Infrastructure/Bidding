@@ -248,6 +248,7 @@ export interface Repository {
   duplicateProject(sourceProjectId: string, details: DuplicateProjectDetailsInput): Promise<Project>;
   updateProjectStatus(projectId: string, status: Project["status"]): Promise<Project>;
   updateProjectLastUsedProfit(projectId: string, profitPct: number): Promise<Project>;
+  updateProjectClient(projectId: string, client: string | null): Promise<Project>;
 
   // Project line items
   listProjectLineItems(projectId: string): Promise<ProjectLineItem[]>;
@@ -296,6 +297,7 @@ export interface Repository {
   // Company profile (quote header)
   getCompanyProfile(): Promise<CompanyProfile | undefined>;
   upsertCompanyProfile(input: CompanyProfileInput): Promise<CompanyProfile>;
+  uploadCompanyLogo(content: Uint8Array, fileName: string): Promise<CompanyProfile>;
 
   // Inclusion/exclusion bank + per-project copies
   listInclusionBankItems(): Promise<InclusionExclusionBankItem[]>;

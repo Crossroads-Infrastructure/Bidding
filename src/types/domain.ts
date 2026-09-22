@@ -258,6 +258,7 @@ export interface CompanyProfile {
   contact_email: string | null;
   certification_tagline: string | null;
   quote_validity_days: number;
+  logo_url: string | null;
 }
 
 // Round 7: a reusable bank of standard inclusion/exclusion language, split

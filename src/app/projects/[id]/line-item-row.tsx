@@ -104,10 +104,21 @@ export function LineItemRow(props: LineItemRowProps) {
     <>
       <tr className="align-top">
         <td className="px-4 py-2">
+          <input
+            defaultValue={line.item_number_override ?? ""}
+            placeholder="#"
+            onBlur={(e) => {
+              const v = e.target.value || null;
+              onFieldChange({ item_number_override: v });
+              onFieldCommit({ item_number_override: v });
+            }}
+            className="w-16 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+        </td>
+        <td className="px-4 py-2">
           <div className="font-medium">{displayName}</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
             {recipe.item.unit}
-            {line.item_number_override ? ` · #${line.item_number_override}` : ""}
             {isCustom && (
               <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                 custom
@@ -145,20 +156,8 @@ export function LineItemRow(props: LineItemRowProps) {
 
       {expanded && (
         <tr>
-          <td colSpan={6} className="bg-zinc-50 px-4 py-4 dark:bg-zinc-800/40">
+          <td colSpan={7} className="bg-zinc-50 px-4 py-4 dark:bg-zinc-800/40">
             <div className="mb-4 flex flex-wrap items-end gap-3 text-xs">
-              <label className="flex flex-col text-zinc-500">
-                Item # (this proposal)
-                <input
-                  defaultValue={line.item_number_override ?? ""}
-                  onBlur={(e) => {
-                    const v = e.target.value || null;
-                    onFieldChange({ item_number_override: v });
-                    onFieldCommit({ item_number_override: v });
-                  }}
-                  className="w-32 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-                />
-              </label>
               <label className="flex flex-col text-zinc-500">
                 Item name (this proposal)
                 <input
