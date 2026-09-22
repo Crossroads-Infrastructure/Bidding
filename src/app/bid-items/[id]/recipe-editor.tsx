@@ -12,6 +12,8 @@ import type {
   EquipmentGroupMember,
   EquipmentRate,
   Material,
+  MaterialCalcMethod,
+  MaterialOutputUnit,
 } from "@/types/domain";
 import {
   addBidItemEquipmentRowAction,
@@ -562,9 +564,14 @@ function AddEquipmentRow({
   );
 }
 
-// Fixed-ratio only, same simplification the project-side "custom item"
-// buildup editor already uses -- dimensional/liquid-application material
-// rows still need to be set up via "+ New Bid Item" at creation time.
+const CALC_METHODS: MaterialCalcMethod[] = ["fixed_ratio", "dimensional", "liquid_application"];
+const OUTPUT_UNITS: MaterialOutputUnit[] = ["CY", "TON", "EA", "GAL"];
+
+// Same calc-method options (fixed ratio / dimensional / liquid
+// application) and waste % field as the "+ New Bid Item" creation form's
+// material row -- previously this only supported fixed_ratio with no
+// waste field, so adding a material to an existing item priced
+// differently than adding one at creation time.
 function AddMaterialRow({
   bidItemId,
   materials,
@@ -576,7 +583,29 @@ function AddMaterialRow({
 }) {
   const [open, setOpen] = useState(false);
   const [materialId, setMaterialId] = useState("");
+  const [calcMethod, setCalcMethod] = useState<MaterialCalcMethod>("fixed_ratio");
   const [qtyPerUnit, setQtyPerUnit] = useState("");
+  const [thicknessIn, setThicknessIn] = useState("");
+  const [widthIn, setWidthIn] = useState("");
+  const [depthIn, setDepthIn] = useState("");
+  const [outputUnit, setOutputUnit] = useState<MaterialOutputUnit | "">("");
+  const [densityFactor, setDensityFactor] = useState("");
+  const [applicationRate, setApplicationRate] = useState("");
+  const [wastePct, setWastePct] = useState("0");
+
+  function reset() {
+    setOpen(false);
+    setMaterialId("");
+    setCalcMethod("fixed_ratio");
+    setQtyPerUnit("");
+    setThicknessIn("");
+    setWidthIn("");
+    setDepthIn("");
+    setOutputUnit("");
+    setDensityFactor("");
+    setApplicationRate("");
+    setWastePct("0");
+  }
 
   if (!open) {
     return (
@@ -586,56 +615,170 @@ function AddMaterialRow({
     );
   }
 
+  const canSubmit =
+    Boolean(materialId) &&
+    ((calcMethod === "fixed_ratio" && qtyPerUnit !== "") ||
+      (calcMethod === "liquid_application" && applicationRate !== "") ||
+      (calcMethod === "dimensional" &&
+        (thicknessIn !== "" || (widthIn !== "" && depthIn !== "")) &&
+        outputUnit !== ""));
+
   return (
-    <div className="flex items-end gap-2">
-      <select
-        value={materialId}
-        onChange={(e) => setMaterialId(e.target.value)}
-        className="rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
-      >
-        <option value="">Material…</option>
-        {materials.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.material_name}
-          </option>
-        ))}
-      </select>
-      {materialId && (
-        <span className="pb-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-          {(() => {
-            const m = materials.find((mat) => mat.id === materialId);
-            return m ? `${m.rate.toLocaleString("en-US", { style: "currency", currency: "USD" })} / ${m.unit}` : null;
-          })()}
-        </span>
-      )}
-      <UnitRateInput perUnitLabel="qty/unit" rateLabel="units/qty" value={qtyPerUnit} onChange={setQtyPerUnit} widthClassName="w-24" />
-      <button
-        disabled={!materialId || !qtyPerUnit}
-        onClick={async () => {
-          const row = await addBidItemMaterialRowAction(bidItemId, {
-            material_id: materialId,
-            calc_method: "fixed_ratio",
-            qty_per_unit: Number(qtyPerUnit),
-            thickness_in: null,
-            width_in: null,
-            depth_in: null,
-            output_unit: null,
-            density_factor: null,
-            application_rate: null,
-            waste_pct: 0,
-          });
-          onAdded(row);
-          setOpen(false);
-          setMaterialId("");
-          setQtyPerUnit("");
-        }}
-        className="rounded bg-zinc-900 px-2 py-1 text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
-      >
-        Add
-      </button>
-      <button onClick={() => setOpen(false)} className="text-zinc-500 hover:underline">
-        Cancel
-      </button>
+    <div className="flex flex-col gap-2 rounded border border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="flex flex-wrap items-end gap-2">
+        <select
+          value={materialId}
+          onChange={(e) => setMaterialId(e.target.value)}
+          className="rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+        >
+          <option value="">Material…</option>
+          {materials.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.material_name}
+            </option>
+          ))}
+        </select>
+        {materialId && (
+          <span className="pb-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+            {(() => {
+              const m = materials.find((mat) => mat.id === materialId);
+              return m
+                ? `${m.rate.toLocaleString("en-US", { style: "currency", currency: "USD" })} / ${m.unit}`
+                : null;
+            })()}
+          </span>
+        )}
+        <select
+          value={calcMethod}
+          onChange={(e) => setCalcMethod(e.target.value as MaterialCalcMethod)}
+          className="rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+        >
+          {CALC_METHODS.map((m) => (
+            <option key={m} value={m}>
+              {m.replace("_", " ")}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        {calcMethod === "fixed_ratio" && (
+          <UnitRateInput
+            perUnitLabel="qty/unit"
+            rateLabel="units/qty"
+            value={qtyPerUnit}
+            onChange={setQtyPerUnit}
+            widthClassName="w-24"
+          />
+        )}
+        {calcMethod === "liquid_application" && (
+          <label className="flex flex-col text-xs text-zinc-500">
+            Gal / SY
+            <input
+              type="number"
+              step="any"
+              value={applicationRate}
+              onChange={(e) => setApplicationRate(e.target.value)}
+              className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+            />
+          </label>
+        )}
+        {calcMethod === "dimensional" && (
+          <>
+            <label className="flex flex-col text-xs text-zinc-500">
+              Thickness (in)
+              <input
+                type="number"
+                step="any"
+                value={thicknessIn}
+                onChange={(e) => setThicknessIn(e.target.value)}
+                className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+              />
+            </label>
+            <label className="flex flex-col text-xs text-zinc-500">
+              Width (in)
+              <input
+                type="number"
+                step="any"
+                value={widthIn}
+                onChange={(e) => setWidthIn(e.target.value)}
+                className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+              />
+            </label>
+            <label className="flex flex-col text-xs text-zinc-500">
+              Depth (in)
+              <input
+                type="number"
+                step="any"
+                value={depthIn}
+                onChange={(e) => setDepthIn(e.target.value)}
+                className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+              />
+            </label>
+            <label className="flex flex-col text-xs text-zinc-500">
+              Output unit
+              <select
+                value={outputUnit}
+                onChange={(e) => setOutputUnit(e.target.value as MaterialOutputUnit)}
+                className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+              >
+                <option value="">Select…</option>
+                {OUTPUT_UNITS.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {outputUnit === "TON" && (
+              <label className="flex flex-col text-xs text-zinc-500">
+                Density (lb/CF)
+                <input
+                  type="number"
+                  step="any"
+                  value={densityFactor}
+                  onChange={(e) => setDensityFactor(e.target.value)}
+                  className="w-24 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </label>
+            )}
+          </>
+        )}
+        <label className="flex flex-col text-xs text-zinc-500">
+          Waste %
+          <input
+            type="number"
+            step="any"
+            value={wastePct}
+            onChange={(e) => setWastePct(e.target.value)}
+            className="w-20 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+        </label>
+        <button
+          disabled={!canSubmit}
+          onClick={async () => {
+            const row = await addBidItemMaterialRowAction(bidItemId, {
+              material_id: materialId,
+              calc_method: calcMethod,
+              qty_per_unit: calcMethod === "fixed_ratio" ? Number(qtyPerUnit) : null,
+              thickness_in: calcMethod === "dimensional" && thicknessIn !== "" ? Number(thicknessIn) : null,
+              width_in: calcMethod === "dimensional" && widthIn !== "" ? Number(widthIn) : null,
+              depth_in: calcMethod === "dimensional" && depthIn !== "" ? Number(depthIn) : null,
+              output_unit: calcMethod === "dimensional" && outputUnit !== "" ? outputUnit : null,
+              density_factor: calcMethod === "dimensional" && densityFactor !== "" ? Number(densityFactor) : null,
+              application_rate: calcMethod === "liquid_application" ? Number(applicationRate) : null,
+              waste_pct: Number(wastePct || 0) / 100,
+            });
+            onAdded(row);
+            reset();
+          }}
+          className="rounded bg-zinc-900 px-2 py-1 text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
+        >
+          Add
+        </button>
+        <button onClick={reset} className="text-zinc-500 hover:underline">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
