@@ -121,6 +121,7 @@ function CompanyProfileCard({ companyProfile }: { companyProfile: CompanyProfile
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
   const [logoPending, setLogoPending] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [form, setForm] = useState({
     company_name: companyProfile?.company_name ?? "",
     address_line1: companyProfile?.address_line1 ?? "",
@@ -169,18 +170,28 @@ function CompanyProfileCard({ companyProfile }: { companyProfile: CompanyProfile
             disabled={logoPending}
             onChange={async (e) => {
               const file = e.target.files?.[0];
+              e.target.value = "";
               if (!file) return;
               setLogoPending(true);
-              const resized = await resizeImageFile(file);
-              const formData = new FormData();
-              formData.set("file", resized);
-              await uploadCompanyLogoAction(formData);
-              setLogoPending(false);
-              router.refresh();
+              setLogoError(null);
+              try {
+                const resized = await resizeImageFile(file);
+                const formData = new FormData();
+                formData.set("file", resized);
+                await uploadCompanyLogoAction(formData);
+                router.refresh();
+              } catch (err) {
+                setLogoError(err instanceof Error ? err.message : "Upload failed -- try a smaller image.");
+              } finally {
+                setLogoPending(false);
+              }
             }}
           />
         </label>
       </div>
+      {logoError && (
+        <p className="-mt-2 mb-3 text-xs text-red-600 dark:text-red-400">{logoError}</p>
+      )}
       <p className="-mt-2 mb-3 text-[10px] text-zinc-400">
         Any image works -- it&apos;s automatically resized before upload, so there&apos;s no need to prepare it first.
       </p>
