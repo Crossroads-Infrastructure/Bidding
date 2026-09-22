@@ -1031,9 +1031,9 @@ export class InMemoryRepository implements Repository {
     return created;
   }
 
-  async uploadCompanyLogo(content: Uint8Array, _fileName: string) {
+  async uploadCompanyLogo(content: Uint8Array, _fileName: string, contentType: string) {
     const base64 = Buffer.from(content).toString("base64");
-    const logoUrl = `data:image/*;base64,${base64}`;
+    const logoUrl = `data:${contentType};base64,${base64}`;
     let profile = store.companyProfile[0];
     if (!profile) {
       profile = {

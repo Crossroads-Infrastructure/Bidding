@@ -1414,11 +1414,11 @@ export class SupabaseRepository implements Repository {
     );
   }
 
-  async uploadCompanyLogo(content: Uint8Array, fileName: string) {
+  async uploadCompanyLogo(content: Uint8Array, fileName: string, contentType: string) {
     const path = `company/logo-${Date.now()}-${fileName}`;
     const { error: uploadError } = await this.client.storage
       .from(DOCUMENTS_BUCKET)
-      .upload(path, content, { contentType: "application/octet-stream", upsert: true });
+      .upload(path, content, { contentType, upsert: true });
     if (uploadError) throw new Error(uploadError.message);
 
     const { data: publicUrl } = this.client.storage.from(DOCUMENTS_BUCKET).getPublicUrl(path);

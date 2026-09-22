@@ -65,7 +65,7 @@ describe("smoke test: round 7 features via InMemoryRepository", () => {
     // exist from an earlier test in this file; this only asserts the
     // upload itself works, not the empty-state case.
     const repo = new InMemoryRepository();
-    const profile = await repo.uploadCompanyLogo(new Uint8Array([1, 2, 3]), "logo.png");
+    const profile = await repo.uploadCompanyLogo(new Uint8Array([1, 2, 3]), "logo.png", "image/png");
     expect(profile.logo_url).toContain("data:image");
   });
 

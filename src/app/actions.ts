@@ -498,7 +498,7 @@ export async function upsertCompanyProfileAction(input: CompanyProfileInput) {
 export async function uploadCompanyLogoAction(formData: FormData) {
   const file = formData.get("file") as File;
   const content = new Uint8Array(await file.arrayBuffer());
-  const profile = await getRepository().uploadCompanyLogo(content, file.name);
+  const profile = await getRepository().uploadCompanyLogo(content, file.name, file.type || "image/png");
   revalidatePath("/rates");
   return profile;
 }

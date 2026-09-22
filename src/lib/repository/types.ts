@@ -297,7 +297,7 @@ export interface Repository {
   // Company profile (quote header)
   getCompanyProfile(): Promise<CompanyProfile | undefined>;
   upsertCompanyProfile(input: CompanyProfileInput): Promise<CompanyProfile>;
-  uploadCompanyLogo(content: Uint8Array, fileName: string): Promise<CompanyProfile>;
+  uploadCompanyLogo(content: Uint8Array, fileName: string, contentType: string): Promise<CompanyProfile>;
 
   // Inclusion/exclusion bank + per-project copies
   listInclusionBankItems(): Promise<InclusionExclusionBankItem[]>;
