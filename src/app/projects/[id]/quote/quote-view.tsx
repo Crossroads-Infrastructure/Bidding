@@ -217,36 +217,36 @@ export function QuoteView({
 
       {/* Quote header -- shown both on screen and when printed, matching the company's real quote template */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-6 border-b border-zinc-200 pb-4 dark:border-zinc-800 print:border-black">
-        <div className="flex items-start gap-4">
-          {companyProfile?.logo_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={companyProfile.logo_url} alt={`${companyProfile.company_name} logo`} className="h-16 w-auto" />
-          )}
-          <div>
-            <p className="text-lg font-semibold">Quote for: {project.project_name}</p>
+        <div>
+          <p className="text-lg font-semibold">Quote for: {project.project_name}</p>
+          <div className="mt-2 flex items-center gap-4">
+            {companyProfile?.logo_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={companyProfile.logo_url} alt={`${companyProfile.company_name} logo`} className="h-[70px] w-auto" />
+            )}
             {companyProfile && (
-              <>
-                <p className="mt-1 font-medium">{companyProfile.company_name}</p>
+              <div>
+                <p className="font-medium">{companyProfile.company_name}</p>
                 {companyProfile.address_line1 && (
                   <p className="text-sm text-zinc-500 dark:text-zinc-400 print:text-black">{companyProfile.address_line1}</p>
                 )}
                 {companyProfile.city_state_zip && (
                   <p className="text-sm text-zinc-500 dark:text-zinc-400 print:text-black">{companyProfile.city_state_zip}</p>
                 )}
-              </>
+              </div>
             )}
-            <div className="mt-2 flex items-center gap-1 text-sm print:hidden">
-              <span>Bid to:</span>
-              <input
-                value={bidToValue}
-                placeholder="Prime Contractor"
-                onChange={(e) => setBidToValue(e.target.value)}
-                onBlur={() => updateProjectClientAction(project.id, bidToValue.trim() || null)}
-                className="w-48 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-              />
-            </div>
-            <p className="mt-2 hidden text-sm print:block">Bid to: {bidTo}</p>
           </div>
+          <div className="mt-2 flex items-center gap-1 text-sm print:hidden">
+            <span>Bid to:</span>
+            <input
+              value={bidToValue}
+              placeholder="Prime Contractor"
+              onChange={(e) => setBidToValue(e.target.value)}
+              onBlur={() => updateProjectClientAction(project.id, bidToValue.trim() || null)}
+              className="w-48 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+            />
+          </div>
+          <p className="mt-2 hidden text-sm print:block">Bid to: {bidTo}</p>
         </div>
         <div className="text-right text-sm">
           {companyProfile?.contact_name && <p>Contact: {companyProfile.contact_name}</p>}
