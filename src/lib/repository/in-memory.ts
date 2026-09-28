@@ -65,6 +65,7 @@ import type {
   NewProjectLineItemInput,
   NewVendorQuoteInput,
   BidItemLaborRowUpdate,
+  ProjectDetailsUpdate,
   ProjectLineItemUpdate,
   Repository,
   VendorQuoteUpdate,
@@ -805,6 +806,13 @@ export class InMemoryRepository implements Repository {
     const project = store.projects.find((p) => p.id === projectId);
     if (!project) throw new Error(`project not found: ${projectId}`);
     project.client = client;
+    return project;
+  }
+
+  async updateProjectDetails(projectId: string, update: ProjectDetailsUpdate) {
+    const project = store.projects.find((p) => p.id === projectId);
+    if (!project) throw new Error(`project not found: ${projectId}`);
+    Object.assign(project, update);
     return project;
   }
 

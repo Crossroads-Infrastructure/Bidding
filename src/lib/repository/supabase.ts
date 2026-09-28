@@ -53,6 +53,7 @@ import type {
   NewProjectInput,
   NewProjectLineItemInput,
   NewVendorQuoteInput,
+  ProjectDetailsUpdate,
   ProjectLineItemUpdate,
   Repository,
   VendorQuoteUpdate,
@@ -1090,6 +1091,15 @@ export class SupabaseRepository implements Repository {
     return coerceNumeric(
       unwrap<Project>(
         await this.client.from("projects").update({ client }).eq("id", projectId).select().single()
+      ),
+      PROJECT_NUMERIC_FIELDS
+    );
+  }
+
+  async updateProjectDetails(projectId: string, update: ProjectDetailsUpdate) {
+    return coerceNumeric(
+      unwrap<Project>(
+        await this.client.from("projects").update(update).eq("id", projectId).select().single()
       ),
       PROJECT_NUMERIC_FIELDS
     );

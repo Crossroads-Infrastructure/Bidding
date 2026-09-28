@@ -90,6 +90,16 @@ export interface BidOutcomeLineInput {
   unit_price_bid: number;
 }
 
+// Lets the job's own info (not just its client, see updateProjectClient)
+// be corrected after creation -- e.g. a bid date that slipped.
+export interface ProjectDetailsUpdate {
+  project_name?: string;
+  client?: string | null;
+  location?: string | null;
+  dot_or_municipality?: string | null;
+  bid_date?: string | null;
+}
+
 export interface DuplicateProjectDetailsInput {
   project_name: string;
   client?: string | null;
@@ -278,6 +288,7 @@ export interface Repository {
   ): Promise<Project>;
   updateProjectLastUsedProfit(projectId: string, profitPct: number): Promise<Project>;
   updateProjectClient(projectId: string, client: string | null): Promise<Project>;
+  updateProjectDetails(projectId: string, update: ProjectDetailsUpdate): Promise<Project>;
 
   // Project line items
   listProjectLineItems(projectId: string): Promise<ProjectLineItem[]>;

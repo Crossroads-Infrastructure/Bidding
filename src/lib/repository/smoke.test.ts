@@ -59,6 +59,22 @@ describe("smoke test: round 7 features via InMemoryRepository", () => {
     expect((await repo.getProject(project.id))?.client).toBe("ABC Construction");
   });
 
+  it("updateProjectDetails corrects job info after creation (e.g. a delayed bid date)", async () => {
+    const repo = new InMemoryRepository();
+    const project = await repo.createProject({ project_name: "Original Name", bid_date: "2026-01-15" });
+    const updated = await repo.updateProjectDetails(project.id, {
+      project_name: "Renamed Job",
+      bid_date: "2026-03-01",
+      dot_or_municipality: "State DOT",
+    });
+    expect(updated.project_name).toBe("Renamed Job");
+    expect(updated.bid_date).toBe("2026-03-01");
+    expect(updated.dot_or_municipality).toBe("State DOT");
+    const reread = await repo.getProject(project.id);
+    expect(reread?.project_name).toBe("Renamed Job");
+    expect(reread?.bid_date).toBe("2026-03-01");
+  });
+
   it("uploadCompanyLogo sets logo_url", async () => {
     // Note: InMemoryRepository backs onto a module-level singleton store
     // (intentional -- see in-memory.ts), so company_profile may already

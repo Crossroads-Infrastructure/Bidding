@@ -37,6 +37,7 @@ import {
 } from "../../actions";
 import { LineItemRow } from "./line-item-row";
 import { DocumentsPanel } from "./documents-panel";
+import { EditJobInfoButton } from "./edit-job-info-button";
 import Link from "next/link";
 
 const STATUSES: ProjectStatus[] = ["estimating", "submitted", "won", "lost"];
@@ -75,6 +76,7 @@ export function EstimateBuilder({
   initialDocuments: ProjectDocument[];
 }) {
   const router = useRouter();
+  const [jobInfo, setJobInfo] = useState(project);
   const [status, setStatus] = useState(project.status);
   const [liveProfitPct, setLiveProfitPct] = useState(project.default_profit_pct * 100);
   const [lineItems, setLineItems] = useState(initialLineItems);
@@ -199,10 +201,13 @@ export function EstimateBuilder({
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{project.project_name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{jobInfo.project_name}</h1>
+            <EditJobInfoButton project={jobInfo} onUpdated={setJobInfo} />
+          </div>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {[project.client, project.location, project.dot_or_municipality].filter(Boolean).join(" · ") || "—"}
-            {project.bid_date ? ` · Bid ${formatDate(project.bid_date)}` : ""}
+            {[jobInfo.client, jobInfo.location, jobInfo.dot_or_municipality].filter(Boolean).join(" · ") || "—"}
+            {jobInfo.bid_date ? ` · Bid ${formatDate(jobInfo.bid_date)}` : ""}
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             Company markup: {(companyDefaults.overhead_pct * 100).toFixed(1)}% overhead ·{" "}

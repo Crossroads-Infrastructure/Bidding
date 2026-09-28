@@ -29,6 +29,7 @@ import type {
   NewProjectLineItemInput,
   RecordProjectDocumentInput,
   NewVendorQuoteInput,
+  ProjectDetailsUpdate,
   ProjectLineItemUpdate,
   VendorQuoteUpdate,
 } from "@/lib/repository/types";
@@ -92,6 +93,16 @@ export async function updateProjectClientAction(projectId: string, client: strin
   const project = await getRepository().updateProjectClient(projectId, client);
   revalidatePath(`/projects/${projectId}/quote`);
   revalidatePath("/");
+  return project;
+}
+
+export async function updateProjectDetailsAction(projectId: string, update: ProjectDetailsUpdate) {
+  const project = await getRepository().updateProjectDetails(projectId, update);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/review`);
+  revalidatePath(`/projects/${projectId}/quote`);
+  revalidatePath("/");
+  revalidatePath("/bid-history");
   return project;
 }
 
